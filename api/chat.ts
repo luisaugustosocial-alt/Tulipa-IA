@@ -3,7 +3,7 @@ import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
-const DAILY_LIMIT = 20;
+const DEFAULT_DAILY_LIMIT = 20;
 
 function getAdminApp() {
   if (getApps().length) return getApps()[0];
@@ -61,6 +61,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const adminAuth = getAuth(app);
     const db = getFirestore(app);
 
+    const configSnap = await db.collection("admin_config").doc("global").get();
+    const configData = configSnap.exists ? configSnap.data() || {} : {};
+    const dailyLimit = Math.max(
+      1,
+      Number(configData.dailyLimit || DEFAULT_DAILY_LIMIT)
+    );
+    const maintenanceMode = Boolean(configData.maintenanceMode);
+    const maintenanceMessage =
+      typeof configData.maintenanceMessage === "string" && configData.maintenanceMessage.trim()
+        ? configData.maintenanceMessage.trim()
+        : "🌷 A Tulipa IA está em manutenção. Volte em alguns instantes.";
+
+    if (maintenanceMode) {
+      return res.status(503).json({
+        code: "MAINTENANCE",
+        error: maintenanceMessage,
+        limit: dailyLimit,
+        remaining: 0,
+      });
+    }
+
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
@@ -89,7 +110,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const snap = await tx.get(usageRef!);
         const current = snap.exists ? Number(snap.data()?.count || 0) : 0;
 
-        if (current >= DAILY_LIMIT) {
+        if (current >= dailyLimit) {
           return { allowed: false, count: current };
         }
 
@@ -121,7 +142,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(429).json({
         code: "DAILY_LIMIT",
         error: "Limite diário de teste atingido.",
-        limit: DAILY_LIMIT,
+        limit: dailyLimit,
         remaining: 0,
       });
     }
@@ -219,8 +240,8 @@ Estilo:
 
       return res.status(response.status === 429 ? 429 : 502).json({
         error: detail,
-        remaining: Math.max(0, DAILY_LIMIT - (usageCount - 1)),
-        limit: DAILY_LIMIT,
+        remaining: Math.max(0, dailyLimit - (usageCount - 1)),
+        limit: dailyLimit,
       });
     }
 
@@ -230,8 +251,8 @@ Estilo:
 
     return res.status(200).json({
       answer: clean(answer),
-      remaining: Math.max(0, DAILY_LIMIT - usageCount),
-      limit: DAILY_LIMIT,
+      remaining: Math.max(0, dailyLimit - usageCount),
+      limit: dailyLimit,
     });
   } catch (error: any) {
     console.error("Tulipa API error:", error);
