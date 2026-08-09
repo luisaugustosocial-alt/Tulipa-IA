@@ -8,6 +8,11 @@ import {
   Plus,
   Send,
   Settings,
+  ShieldCheck,
+  Save,
+  RefreshCw,
+  Users,
+  BarChart3,
   Sun,
   Trash2,
   UserRound,
@@ -49,7 +54,40 @@ type Conversation = {
   updatedAt: number;
 };
 
+type PublicConfig = {
+  dailyLimit: number;
+  betaMessage: string;
+  assistantSubtitle: string;
+  maintenanceMode: boolean;
+  maintenanceMessage: string;
+};
+
+type AdminUser = {
+  uid: string;
+  email: string;
+  displayName: string;
+  disabled: boolean;
+};
+
+type AdminDashboardData = {
+  config: PublicConfig;
+  stats: {
+    users: number;
+    conversations: number;
+    messagesToday: number;
+  };
+  users: AdminUser[];
+};
+
 const DEFAULT_DAILY_LIMIT = 20;
+
+const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
+  dailyLimit: DEFAULT_DAILY_LIMIT,
+  betaMessage: "🧪 Beta: mensagens diárias são limitadas para manter o teste estável.",
+  assistantSubtitle: "Assistente geral em fase de testes",
+  maintenanceMode: false,
+  maintenanceMessage: "🌷 A Tulipa IA está em manutenção. Volte em alguns instantes.",
+};
 
 function makeId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -62,7 +100,7 @@ function formatTime(ts: number) {
   });
 }
 
-function LoginScreen() {
+function LoginScreen({ betaMessage }: { betaMessage: string }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -160,7 +198,7 @@ function LoginScreen() {
         {error && <p className="error-text">{error}</p>}
 
         <p className="test-note">
-          🧪 Fase de testes: cada conta possui um limite diário de mensagens.
+          {betaMessage}
         </p>
       </section>
     </main>
@@ -189,6 +227,12 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [remaining, setRemaining] = useState(DEFAULT_DAILY_LIMIT);
   const [dailyLimit, setDailyLimit] = useState(DEFAULT_DAILY_LIMIT);
+  const [publicConfig, setPublicConfig] = useState<PublicConfig>(DEFAULT_PUBLIC_CONFIG);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [adminCode, setAdminCode] = useState("");
+  const [adminData, setAdminData] = useState<AdminDashboardData | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminSaving, setAdminSaving] = useState(false);
   const [chatLoading, setChatLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -201,6 +245,26 @@ export default function App() {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("tulipa-dark", dark ? "1" : "0");
   }, [dark]);
+
+  useEffect(() => {
+    fetch("/api/public-config")
+      .then(async (resp) => {
+        if (!resp.ok) throw new Error("Configuração indisponível");
+        return resp.json();
+      })
+      .then((data) => {
+        const next: PublicConfig = {
+          ...DEFAULT_PUBLIC_CONFIG,
+          ...data,
+        };
+        setPublicConfig(next);
+        setDailyLimit(next.dailyLimit);
+        setRemaining((current) => Math.min(current, next.dailyLimit));
+      })
+      .catch(() => {
+        setPublicConfig(DEFAULT_PUBLIC_CONFIG);
+      });
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -356,9 +420,148 @@ export default function App() {
     }
   }
 
+  async function callAdmin(action: string, payload: Record<string, unknown> = {}) {
+    if (!user) throw new Error("Usuário não autenticado.");
+
+    const token = await user.getIdToken(true);
+    const resp = await fetch("/api/admin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action,
+        code: adminCode,
+        ...payload,
+      }),
+    });
+
+    const raw = await resp.text();
+    let data: any = {};
+
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new Error("Resposta inválida do painel administrativo.");
+    }
+
+    if (!resp.ok) {
+      throw new Error(data?.error || "Acesso administrativo negado.");
+    }
+
+    return data;
+  }
+
+  async function unlockAdmin(code: string) {
+    if (!user) return false;
+
+    setAdminLoading(true);
+    try {
+      const token = await user.getIdToken(true);
+      const resp = await fetch("/api/admin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "unlock",
+          code,
+        }),
+      });
+
+      const raw = await resp.text();
+      const data = raw ? JSON.parse(raw) : {};
+
+      if (!resp.ok) return false;
+
+      setAdminCode(code);
+      setAdminData(data);
+      setAdminUnlocked(true);
+      setSidebarOpen(false);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  async function refreshAdmin() {
+    setAdminLoading(true);
+    try {
+      const data = await callAdmin("dashboard");
+      setAdminData(data);
+    } catch (error: any) {
+      alert(error?.message || "Não foi possível atualizar o painel.");
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  async function saveAdminConfig() {
+    if (!adminData) return;
+
+    setAdminSaving(true);
+    try {
+      const data = await callAdmin("updateConfig", {
+        config: adminData.config,
+      });
+
+      setAdminData((prev) =>
+        prev
+          ? {
+              ...prev,
+              config: data.config,
+            }
+          : prev
+      );
+
+      setPublicConfig(data.config);
+      setDailyLimit(data.config.dailyLimit);
+      alert("Configurações salvas.");
+    } catch (error: any) {
+      alert(error?.message || "Não foi possível salvar.");
+    } finally {
+      setAdminSaving(false);
+    }
+  }
+
   async function send() {
     const text = input.trim();
     if (!text || !user || sending) return;
+
+    if (text.startsWith("#")) {
+      setInput("");
+      const unlocked = await unlockAdmin(text);
+
+      if (unlocked) return;
+
+      const baseForNotice = active || buildConversation();
+      const notice: Message = {
+        id: makeId("msg"),
+        role: "assistant",
+        text: "🌷 Comando não reconhecido.",
+        createdAt: Date.now(),
+      };
+
+      const updated: Conversation = {
+        ...baseForNotice,
+        messages: [...baseForNotice.messages, notice],
+        updatedAt: Date.now(),
+      };
+
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === updated.id);
+        return exists
+          ? prev.map((c) => (c.id === updated.id ? updated : c))
+          : [updated, ...prev];
+      });
+
+      if (!active) setActiveId(updated.id);
+      return;
+    }
 
     let base = active;
 
@@ -508,9 +711,230 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <LoginScreen />
+        <LoginScreen betaMessage={publicConfig.betaMessage} />
         <Analytics />
       </>
+    );
+  }
+
+  if (adminUnlocked && adminData) {
+    return (
+      <div className="admin-shell">
+        <header className="admin-topbar">
+          <div className="admin-brand">
+            <TulipLogo />
+            <div>
+              <strong>Painel Administrativo</strong>
+              <span>Tulipa IA</span>
+            </div>
+          </div>
+
+          <div className="admin-actions">
+            <button onClick={refreshAdmin} disabled={adminLoading}>
+              <RefreshCw size={17} />
+              Atualizar
+            </button>
+            <button
+              className="admin-exit"
+              onClick={() => {
+                setAdminUnlocked(false);
+                setAdminCode("");
+                setAdminData(null);
+              }}
+            >
+              <X size={17} />
+              Voltar ao chat
+            </button>
+          </div>
+        </header>
+
+        <main className="admin-content">
+          <section className="admin-hero">
+            <div>
+              <div className="admin-kicker">
+                <ShieldCheck size={17} />
+                Acesso verificado
+              </div>
+              <h1>Controle da Tulipa IA 🌷</h1>
+              <p>
+                Altere configurações do Beta sem editar o código ou fazer novo deploy.
+              </p>
+            </div>
+          </section>
+
+          <section className="admin-stats-grid">
+            <article className="admin-stat-card">
+              <Users size={20} />
+              <span>Usuários</span>
+              <strong>{adminData.stats.users}</strong>
+            </article>
+            <article className="admin-stat-card">
+              <Bot size={20} />
+              <span>Conversas</span>
+              <strong>{adminData.stats.conversations}</strong>
+            </article>
+            <article className="admin-stat-card">
+              <BarChart3 size={20} />
+              <span>Mensagens hoje</span>
+              <strong>{adminData.stats.messagesToday}</strong>
+            </article>
+          </section>
+
+          <section className="admin-panel-card">
+            <div className="admin-card-title">
+              <div>
+                <h2>Configurações do Beta</h2>
+                <p>Essas alterações são salvas no Firebase e passam a valer no site.</p>
+              </div>
+              <button
+                className="admin-save"
+                onClick={saveAdminConfig}
+                disabled={adminSaving}
+              >
+                <Save size={17} />
+                {adminSaving ? "Salvando..." : "Salvar alterações"}
+              </button>
+            </div>
+
+            <div className="admin-form-grid">
+              <label>
+                Limite diário por usuário
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={adminData.config.dailyLimit}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              dailyLimit: Math.max(1, Number(e.target.value || 1)),
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                Subtítulo da assistente
+                <input
+                  value={adminData.config.assistantSubtitle}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              assistantSubtitle: e.target.value,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-full-field">
+                Mensagem do Beta
+                <textarea
+                  rows={3}
+                  value={adminData.config.betaMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              betaMessage: e.target.value,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
+                  checked={adminData.config.maintenanceMode}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              maintenanceMode: e.target.checked,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Modo manutenção</strong>
+                  <small>Impede temporariamente novas mensagens para a IA.</small>
+                </span>
+              </label>
+
+              <label className="admin-full-field">
+                Mensagem de manutenção
+                <textarea
+                  rows={2}
+                  value={adminData.config.maintenanceMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              maintenanceMessage: e.target.value,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="admin-panel-card">
+            <div className="admin-card-title">
+              <div>
+                <h2>Usuários recentes</h2>
+                <p>Lista administrativa das contas cadastradas.</p>
+              </div>
+            </div>
+
+            <div className="admin-user-list">
+              {adminData.users.map((item) => (
+                <div className="admin-user-row" key={item.uid}>
+                  <div className="avatar-fallback">
+                    <UserRound size={16} />
+                  </div>
+                  <div>
+                    <strong>{item.displayName || "Sem nome"}</strong>
+                    <span>{item.email || "Sem e-mail"}</span>
+                  </div>
+                  <small>{item.disabled ? "Bloqueado" : "Ativo"}</small>
+                </div>
+              ))}
+            </div>
+          </section>
+        </main>
+
+        <Analytics />
+      </div>
     );
   }
 
@@ -617,7 +1041,7 @@ export default function App() {
 
           <div className="topbar-title">
             <strong>{active?.title || "Tulipa IA"}</strong>
-            <span>Assistente geral em fase de testes</span>
+            <span>{publicConfig.assistantSubtitle}</span>
           </div>
 
           <div className="usage-pill" title="Limite diário de teste">
@@ -658,7 +1082,7 @@ export default function App() {
 
         <section className="composer-wrap">
           <div className="beta-banner">
-            🧪 Beta: mensagens diárias são limitadas para manter o teste estável.
+            {publicConfig.betaMessage}
           </div>
           <div className="composer">
             <textarea
