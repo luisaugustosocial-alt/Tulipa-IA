@@ -60,6 +60,11 @@ type PublicConfig = {
   assistantSubtitle: string;
   maintenanceMode: boolean;
   maintenanceMessage: string;
+  showBetaMessage: boolean;
+  showDailyCounter: boolean;
+  welcomeMessage: string;
+  loginSubtitle: string;
+  registrationsEnabled: boolean;
 };
 
 type AdminUser = {
@@ -87,6 +92,11 @@ const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
   assistantSubtitle: "Assistente geral em fase de testes",
   maintenanceMode: false,
   maintenanceMessage: "🌷 A Tulipa IA está em manutenção. Volte em alguns instantes.",
+  showBetaMessage: true,
+  showDailyCounter: true,
+  welcomeMessage: "Oi! Eu sou a Tulipa IA 🌷. Posso ajudar com estudos, textos, ideias, organização, explicações e dúvidas simples do dia a dia. O que vamos fazer?",
+  loginSubtitle: "Uma assistente para estudar, organizar ideias, escrever e resolver dúvidas simples do dia a dia.",
+  registrationsEnabled: true,
 };
 
 function makeId(prefix: string) {
@@ -100,7 +110,17 @@ function formatTime(ts: number) {
   });
 }
 
-function LoginScreen({ betaMessage }: { betaMessage: string }) {
+function LoginScreen({
+  betaMessage,
+  showBetaMessage,
+  loginSubtitle,
+  registrationsEnabled,
+}: {
+  betaMessage: string;
+  showBetaMessage: boolean;
+  loginSubtitle: string;
+  registrationsEnabled: boolean;
+}) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -112,6 +132,9 @@ function LoginScreen({ betaMessage }: { betaMessage: string }) {
     setError("");
     try {
       if (mode === "register") {
+        if (!registrationsEnabled) {
+          throw new Error("Novos cadastros estão temporariamente desativados.");
+        }
         await createUserWithEmailAndPassword(auth, email, password);
       } else {
         await signInWithEmailAndPassword(auth, email, password);
@@ -143,10 +166,7 @@ function LoginScreen({ betaMessage }: { betaMessage: string }) {
       <section className="auth-card">
         <div className="brand-mark">🌷</div>
         <h1>Tulipa IA</h1>
-        <p className="auth-subtitle">
-          Uma assistente para estudar, organizar ideias, escrever, pesquisar conceitos
-          e resolver dúvidas simples do dia a dia.
-        </p>
+        <p className="auth-subtitle">{loginSubtitle}</p>
 
         <div className="auth-tabs">
           <button
@@ -155,12 +175,14 @@ function LoginScreen({ betaMessage }: { betaMessage: string }) {
           >
             Entrar
           </button>
-          <button
-            className={mode === "register" ? "active" : ""}
-            onClick={() => setMode("register")}
-          >
-            Criar conta
-          </button>
+          {registrationsEnabled && (
+            <button
+              className={mode === "register" ? "active" : ""}
+              onClick={() => setMode("register")}
+            >
+              Criar conta
+            </button>
+          )}
         </div>
 
         <label>
@@ -197,9 +219,9 @@ function LoginScreen({ betaMessage }: { betaMessage: string }) {
 
         {error && <p className="error-text">{error}</p>}
 
-        <p className="test-note">
-          {betaMessage}
-        </p>
+        {showBetaMessage && (
+          <p className="test-note">{betaMessage}</p>
+        )}
       </section>
     </main>
   );
@@ -372,8 +394,7 @@ export default function App() {
         {
           id: makeId("msg"),
           role: "assistant",
-          text:
-            "Oi! Eu sou a Tulipa IA 🌷. Posso ajudar com estudos, textos, ideias, organização, explicações e dúvidas simples do dia a dia. O que vamos fazer?",
+          text: publicConfig.welcomeMessage,
           createdAt: now,
         },
       ],
@@ -711,7 +732,12 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <LoginScreen betaMessage={publicConfig.betaMessage} />
+        <LoginScreen
+          betaMessage={publicConfig.betaMessage}
+          showBetaMessage={publicConfig.showBetaMessage}
+          loginSubtitle={publicConfig.loginSubtitle}
+          registrationsEnabled={publicConfig.registrationsEnabled}
+        />
         <Analytics />
       </>
     );
@@ -864,6 +890,90 @@ export default function App() {
               <label className="admin-switch-row">
                 <input
                   type="checkbox"
+                  checked={adminData.config.showBetaMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, showBetaMessage: e.target.checked } }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Exibir mensagens de Beta</strong>
+                  <small>Desative para remover os avisos de Beta do login e do chat.</small>
+                </span>
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
+                  checked={adminData.config.showDailyCounter}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, showDailyCounter: e.target.checked } }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Exibir contador diário</strong>
+                  <small>Mostra ou esconde o contador de mensagens no topo.</small>
+                </span>
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
+                  checked={adminData.config.registrationsEnabled}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, registrationsEnabled: e.target.checked } }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Permitir novos cadastros</strong>
+                  <small>Desative se quiser fechar temporariamente novas contas.</small>
+                </span>
+              </label>
+
+              <label className="admin-full-field">
+                Mensagem inicial da Tulipa
+                <textarea
+                  rows={4}
+                  value={adminData.config.welcomeMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, welcomeMessage: e.target.value } }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-full-field">
+                Texto da tela de login
+                <textarea
+                  rows={3}
+                  value={adminData.config.loginSubtitle}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, loginSubtitle: e.target.value } }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
                   checked={adminData.config.maintenanceMode}
                   onChange={(e) =>
                     setAdminData((prev) =>
@@ -927,6 +1037,36 @@ export default function App() {
                     <span>{item.email || "Sem e-mail"}</span>
                   </div>
                   <small>{item.disabled ? "Bloqueado" : "Ativo"}</small>
+                  <button
+                    className="admin-user-action"
+                    onClick={async () => {
+                      try {
+                        await callAdmin("resetUserUsage", { uid: item.uid });
+                        alert("Limite diário desse usuário foi zerado.");
+                        await refreshAdmin();
+                      } catch (error: any) {
+                        alert(error?.message || "Não foi possível zerar o uso.");
+                      }
+                    }}
+                  >
+                    Zerar uso
+                  </button>
+                  <button
+                    className="admin-user-action"
+                    onClick={async () => {
+                      try {
+                        await callAdmin("setUserDisabled", {
+                          uid: item.uid,
+                          disabled: !item.disabled,
+                        });
+                        await refreshAdmin();
+                      } catch (error: any) {
+                        alert(error?.message || "Não foi possível alterar o usuário.");
+                      }
+                    }}
+                  >
+                    {item.disabled ? "Desbloquear" : "Bloquear"}
+                  </button>
                 </div>
               ))}
             </div>
@@ -1044,9 +1184,11 @@ export default function App() {
             <span>{publicConfig.assistantSubtitle}</span>
           </div>
 
-          <div className="usage-pill" title="Limite diário de teste">
-            🌷 {remaining}/{dailyLimit} hoje
-          </div>
+          {publicConfig.showDailyCounter && (
+            <div className="usage-pill" title="Limite diário de uso">
+              🌷 {remaining}/{dailyLimit} hoje
+            </div>
+          )}
         </header>
 
         <section className="messages">
@@ -1081,9 +1223,9 @@ export default function App() {
         </section>
 
         <section className="composer-wrap">
-          <div className="beta-banner">
-            {publicConfig.betaMessage}
-          </div>
+          {publicConfig.showBetaMessage && (
+            <div className="beta-banner">{publicConfig.betaMessage}</div>
+          )}
           <div className="composer">
             <textarea
               value={input}
