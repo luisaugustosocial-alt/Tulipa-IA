@@ -179,13 +179,17 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dark, setDark] = useState(() => localStorage.getItem("tulipa-dark") === "1");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.innerWidth > 760;
+  });
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState("");
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [remaining, setRemaining] = useState(DEFAULT_DAILY_LIMIT);
   const [dailyLimit, setDailyLimit] = useState(DEFAULT_DAILY_LIMIT);
+  const [chatLoading, setChatLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const active = useMemo(
@@ -199,12 +203,20 @@ export default function App() {
   }, [dark]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (currentUser) => {
+    const handleResize = () => {
+      if (window.innerWidth <= 760) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
 
       if (currentUser) {
-        await setDoc(
+        setDoc(
           doc(db, "users", currentUser.uid),
           {
             uid: currentUser.uid,
@@ -214,7 +226,9 @@ export default function App() {
             lastSeenAt: serverTimestamp(),
           },
           { merge: true }
-        );
+        ).catch((error) => {
+          console.error("Não foi possível atualizar o perfil no Firestore:", error);
+        });
       }
     });
 
@@ -222,44 +236,72 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!user) {
       setConversations([]);
       setActiveId("");
+      setChatLoading(false);
       return;
     }
 
-    (async () => {
-      const q = query(
-        collection(db, "users", user.uid, "conversations"),
-        orderBy("updatedAt", "desc")
-      );
-      const snap = await getDocs(q);
-      const items: Conversation[] = snap.docs.map((d) => {
-        const data = d.data() as any;
-        return {
-          id: d.id,
-          title: data.title || "Conversa",
-          messages: Array.isArray(data.messages) ? data.messages : [],
-          updatedAt: data.updatedAt || Date.now(),
-        };
-      });
+    setChatLoading(true);
 
-      if (items.length) {
-        setConversations(items);
-        setActiveId(items[0].id);
-      } else {
-        createConversation();
+    (async () => {
+      try {
+        const q = query(
+          collection(db, "users", user.uid, "conversations"),
+          orderBy("updatedAt", "desc")
+        );
+        const snap = await getDocs(q);
+
+        if (cancelled) return;
+
+        const items: Conversation[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            title: data.title || "Conversa",
+            messages: Array.isArray(data.messages) ? data.messages : [],
+            updatedAt: data.updatedAt || Date.now(),
+          };
+        });
+
+        if (items.length) {
+          setConversations(items);
+          setActiveId(items[0].id);
+        } else {
+          const fresh = buildConversation();
+          setConversations([fresh]);
+          setActiveId(fresh.id);
+          persistConversation(fresh).catch(() => {});
+        }
+      } catch (error) {
+        console.error("Falha ao carregar conversas:", error);
+
+        if (!cancelled) {
+          const fresh = buildConversation();
+          setConversations([fresh]);
+          setActiveId(fresh.id);
+        }
+      } finally {
+        if (!cancelled) setChatLoading(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [active?.messages, sending]);
 
-  function createConversation() {
+  function buildConversation(): Conversation {
     const now = Date.now();
-    const fresh: Conversation = {
+
+    return {
       id: makeId("chat"),
       title: "Nova conversa",
       messages: [
@@ -273,9 +315,21 @@ export default function App() {
       ],
       updatedAt: now,
     };
+  }
+
+  function createConversation() {
+    if (typeof window !== "undefined" && window.innerWidth <= 760) {
+      setSidebarOpen(false);
+    }
+
+    const fresh = buildConversation();
     setConversations((prev) => [fresh, ...prev]);
     setActiveId(fresh.id);
     setInput("");
+
+    persistConversation(fresh).catch((error) => {
+      console.error("Falha ao salvar a nova conversa:", error);
+    });
   }
 
   async function persistConversation(conv: Conversation) {
@@ -304,7 +358,15 @@ export default function App() {
 
   async function send() {
     const text = input.trim();
-    if (!text || !user || !active || sending) return;
+    if (!text || !user || sending) return;
+
+    let base = active;
+
+    if (!base) {
+      base = buildConversation();
+      setConversations([base]);
+      setActiveId(base.id);
+    }
 
     setInput("");
     setSending(true);
@@ -316,25 +378,28 @@ export default function App() {
       createdAt: Date.now(),
     };
 
-    const historyBefore = active.messages;
+    const historyBefore = base.messages;
     const nextTitle =
-      active.title === "Nova conversa"
+      base.title === "Nova conversa"
         ? text.replace(/\s+/g, " ").slice(0, 42)
-        : active.title;
+        : base.title;
 
     const withUser: Conversation = {
-      ...active,
+      ...base,
       title: nextTitle,
-      messages: [...active.messages, userMessage],
+      messages: [...base.messages, userMessage],
       updatedAt: Date.now(),
     };
 
-    setConversations((prev) =>
-      prev.map((c) => (c.id === active.id ? withUser : c))
-    );
+    setConversations((prev) => {
+      const exists = prev.some((c) => c.id === base!.id);
+      return exists
+        ? prev.map((c) => (c.id === base!.id ? withUser : c))
+        : [withUser, ...prev];
+    });
 
     try {
-      const token = await user.getIdToken();
+      const token = await user.getIdToken(true);
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -350,16 +415,41 @@ export default function App() {
         }),
       });
 
-      const data = await resp.json();
+      const raw = await resp.text();
+      let data: any = {};
+
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          "🌷 A Tulipa IA recebeu uma resposta inesperada do servidor. Atualize a página e tente novamente."
+        );
+      }
 
       if (!resp.ok) {
         if (resp.status === 429 && data?.code === "DAILY_LIMIT") {
           setRemaining(0);
           throw new Error(
-            `🌷 O jardim da Tulipa IA já recebeu todas as mensagens de teste de hoje. Volte amanhã para continuarmos florescendo ideias juntos.`
+            "🌷 O jardim da Tulipa IA já recebeu todas as mensagens de teste de hoje. Volte amanhã para continuarmos florescendo ideias juntos."
           );
         }
-        throw new Error(data?.error || "Não consegui responder agora.");
+
+        if (resp.status === 429) {
+          throw new Error(
+            "🌷 O jardim da Tulipa IA ficou congestionado por alguns instantes. Aguarde um pouco, atualize o site e tente novamente."
+          );
+        }
+
+        if (data?.code === "FIRESTORE_NOT_READY") {
+          throw new Error(
+            "🌷 O jardim da Tulipa IA ainda está sendo preparado. Tente novamente em alguns instantes."
+          );
+        }
+
+        throw new Error(
+          data?.error ||
+            "🌷 A Tulipa IA teve um pequeno imprevisto. Atualize o site e tente novamente."
+        );
       }
 
       if (typeof data.remaining === "number") setRemaining(data.remaining);
@@ -379,9 +469,12 @@ export default function App() {
       };
 
       setConversations((prev) =>
-        prev.map((c) => (c.id === active.id ? complete : c))
+        prev.map((c) => (c.id === base!.id ? complete : c))
       );
-      await persistConversation(complete);
+
+      persistConversation(complete).catch((error) => {
+        console.error("Falha ao salvar a conversa:", error);
+      });
     } catch (err: any) {
       const aiMessage: Message = {
         id: makeId("msg"),
@@ -399,9 +492,10 @@ export default function App() {
       };
 
       setConversations((prev) =>
-        prev.map((c) => (c.id === active.id ? complete : c))
+        prev.map((c) => (c.id === base!.id ? complete : c))
       );
-      await persistConversation(complete);
+
+      persistConversation(complete).catch(() => {});
     } finally {
       setSending(false);
     }
@@ -446,7 +540,12 @@ export default function App() {
                 key={conv.id}
                 className={`conversation-row ${conv.id === activeId ? "active" : ""}`}
               >
-                <button onClick={() => setActiveId(conv.id)}>
+                <button onClick={() => {
+                  setActiveId(conv.id);
+                  if (typeof window !== "undefined" && window.innerWidth <= 760) {
+                    setSidebarOpen(false);
+                  }
+                }}>
                   <Bot size={15} />
                   <span>{conv.title}</span>
                 </button>
@@ -489,6 +588,14 @@ export default function App() {
         </div>
       </aside>
 
+      {sidebarOpen && (
+        <button
+          className="mobile-sidebar-backdrop"
+          aria-label="Fechar menu"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       <main className="chat-area">
         <header className="topbar">
           <button
@@ -510,7 +617,11 @@ export default function App() {
         </header>
 
         <section className="messages">
-          {active?.messages.map((message) => (
+          {chatLoading && (
+            <div className="chat-loading">🌷 Preparando seu jardim de conversas...</div>
+          )}
+
+          {!chatLoading && active?.messages.map((message) => (
             <article
               key={message.id}
               className={`message ${message.role === "user" ? "user" : "assistant"}`}
