@@ -183,3 +183,133 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   .message > div:last-child { max-width: 88%; }
   .auth-card { padding: 25px 20px; }
 }
+
+
+.mobile-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .mobile-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    background: rgba(8, 3, 10, 0.48);
+    backdrop-filter: blur(2px);
+  }
+
+  .sidebar {
+    width: min(300px, 86vw);
+    transform: translateX(0);
+  }
+
+  .sidebar.closed {
+    width: min(300px, 86vw);
+    transform: translateX(-105%);
+    box-shadow: none;
+  }
+
+  .chat-area {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .topbar {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .topbar-title span {
+    display: none;
+  }
+
+  .usage-pill {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .messages {
+    width: calc(100% - 20px);
+    padding-bottom: 180px;
+  }
+
+  .composer-wrap,
+  .sidebar.closed ~ .chat-area .composer-wrap {
+    left: 0;
+    right: 0;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+
+/* Correção final do menu no celular */
+.mobile-close-sidebar {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100dvh;
+    width: min(320px, 86vw) !important;
+    z-index: 30 !important;
+    transform: translateX(-105%);
+    transition: transform .22s ease;
+    box-shadow: none;
+  }
+
+  .sidebar.open {
+    transform: translateX(0) !important;
+    box-shadow: 14px 0 50px rgba(0,0,0,.25);
+  }
+
+  .sidebar.closed {
+    transform: translateX(-105%) !important;
+    width: min(320px, 86vw) !important;
+  }
+
+  .mobile-sidebar-backdrop {
+    z-index: 20 !important;
+  }
+
+  .mobile-close-sidebar {
+    display: grid;
+    place-items: center;
+    margin-left: auto;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-strong);
+    color: var(--text);
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .sidebar-brand {
+    width: 100%;
+  }
+
+  .sidebar-brand-text {
+    min-width: 0;
+  }
+
+  .chat-area {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+
+  .composer-wrap,
+  .sidebar.closed ~ .chat-area .composer-wrap,
+  .sidebar.open ~ .chat-area .composer-wrap {
+    left: 0 !important;
+  }
+}
