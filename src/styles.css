@@ -632,3 +632,101 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .admin-user-action:hover {
   background: var(--brand-soft);
 }
+
+
+/* Identidade visual oficial Tulipa.ia */
+.brand-mark {
+  overflow: hidden;
+  background: #5b1f67;
+  padding: 0;
+}
+
+.brand-symbol-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+.auth-main-logo {
+  display: block;
+  width: min(250px, 82%);
+  height: 72px;
+  margin: 8px auto 10px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 14px;
+}
+
+.tulip-brand-image {
+  display: block;
+  width: 175px;
+  height: 48px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 10px;
+  flex: 0 0 auto;
+}
+
+.tulip-symbol-image {
+  display: block;
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 13px;
+  flex: 0 0 auto;
+}
+
+.message-avatar {
+  overflow: hidden;
+  background: #5b1f67;
+  padding: 0;
+}
+
+.message-logo-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  border-radius: inherit;
+}
+
+.loading-screen .tulip-brand-image {
+  width: 220px;
+  height: 62px;
+}
+
+.admin-brand .tulip-brand-image {
+  width: 150px;
+  height: 42px;
+}
+
+.sidebar.closed .tulip-symbol-image {
+  width: 42px;
+  height: 42px;
+}
+
+@media (max-width: 760px) {
+  .auth-main-logo {
+    width: min(220px, 86%);
+    height: 64px;
+  }
+
+  .tulip-brand-image {
+    width: 165px;
+    height: 46px;
+  }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .admin-brand .tulip-brand-image {
+    width: 132px;
+    height: 38px;
+  }
+}
