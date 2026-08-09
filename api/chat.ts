@@ -8,16 +8,23 @@ const DAILY_LIMIT = 20;
 function getAdminApp() {
   if (getApps().length) return getApps()[0];
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY
+    ?.replace(/^["']|["']$/g, "")
+    .replace(/\\n/g, "\n")
+    .trim();
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error("Firebase Admin não configurado na Vercel.");
+    throw new Error("FIREBASE_ADMIN_MISSING");
   }
 
   return initializeApp({
-    credential: cert({ projectId, clientEmail, privateKey }),
+    credential: cert({
+      projectId,
+      clientEmail,
+      privateKey,
+    }),
   });
 }
 
@@ -46,6 +53,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Método não permitido." });
   }
 
+  let usageRef: FirebaseFirestore.DocumentReference | null = null;
+  let usageCount = 0;
+
   try {
     const app = getAdminApp();
     const adminAuth = getAuth(app);
@@ -55,43 +65,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
     if (!token) {
-      return res.status(401).json({ error: "Entre na sua conta para usar a Tulipa IA." });
+      return res.status(401).json({
+        error: "Entre novamente na sua conta para usar a Tulipa IA.",
+      });
     }
 
     const decoded = await adminAuth.verifyIdToken(token);
     const uid = decoded.uid;
 
-    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const message =
+      typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const history = Array.isArray(req.body?.history) ? req.body.history : [];
 
     if (!message) {
       return res.status(400).json({ error: "Digite uma mensagem." });
     }
 
-    const usageRef = db.collection("tulipa_usage").doc(`${uid}_${todayKey()}`);
+    usageRef = db.collection("tulipa_usage").doc(`${uid}_${todayKey()}`);
 
-    const usage = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(usageRef);
-      const current = snap.exists ? Number(snap.data()?.count || 0) : 0;
+    let usage;
+    try {
+      usage = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(usageRef!);
+        const current = snap.exists ? Number(snap.data()?.count || 0) : 0;
 
-      if (current >= DAILY_LIMIT) {
-        return { allowed: false, count: current };
-      }
+        if (current >= DAILY_LIMIT) {
+          return { allowed: false, count: current };
+        }
 
-      const next = current + 1;
-      tx.set(
-        usageRef,
-        {
-          uid,
-          date: todayKey(),
-          count: next,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+        const next = current + 1;
+        tx.set(
+          usageRef!,
+          {
+            uid,
+            date: todayKey(),
+            count: next,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
 
-      return { allowed: true, count: next };
-    });
+        return { allowed: true, count: next };
+      });
+    } catch (error) {
+      console.error("Firestore usage error:", error);
+      return res.status(503).json({
+        code: "FIRESTORE_NOT_READY",
+        error: "O armazenamento da Tulipa IA ainda não está disponível.",
+      });
+    }
+
+    usageCount = usage.count;
 
     if (!usage.allowed) {
       return res.status(429).json({
@@ -102,16 +126,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+
     if (!apiKey) {
-      return res.status(500).json({ error: "Chave da Tulipa IA não configurada." });
+      return res.status(500).json({
+        error: "A chave da Tulipa IA não está configurada no servidor.",
+      });
     }
 
     const contents = history
-      .filter((item: any) =>
-        item &&
-        (item.role === "user" || item.role === "assistant") &&
-        typeof item.text === "string"
+      .filter(
+        (item: any) =>
+          item &&
+          (item.role === "user" || item.role === "assistant") &&
+          typeof item.text === "string"
       )
       .slice(-18)
       .map((item: any) => ({
@@ -134,15 +162,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             parts: [
               {
                 text: `
-Você é a Tulipa IA, uma assistente virtual geral, amigável e clara.
+Você é a Tulipa IA, uma assistente virtual geral, amigável, clara e didática.
 
 Seu nome é sempre Tulipa IA.
-Você NÃO é exclusiva para química nem para uma pessoa específica.
+Você não é exclusiva para química nem para uma pessoa específica.
 
 Você pode ajudar com:
 - estudos e explicações;
-- escrita e revisão de textos;
-- ideias e organização;
+- escrita, revisão e organização de textos;
+- ideias e planejamento;
 - cálculos simples;
 - dúvidas gerais do cotidiano;
 - trabalhos e tarefas de baixa complexidade.
@@ -172,14 +200,26 @@ Estilo:
     try {
       data = raw ? JSON.parse(raw) : {};
     } catch {
-      return res.status(502).json({ error: "A Tulipa IA recebeu uma resposta inválida." });
+      throw new Error("GEMINI_INVALID_RESPONSE");
     }
 
     if (!response.ok) {
+      // A mensagem não deve consumir a cota quando o Gemini falhar.
+      if (usageRef) {
+        await usageRef.set(
+          {
+            count: Math.max(0, usageCount - 1),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        ).catch(() => {});
+      }
+
       const detail = data?.error?.message || "Erro ao consultar a IA.";
+
       return res.status(response.status === 429 ? 429 : 502).json({
         error: detail,
-        remaining: Math.max(0, DAILY_LIMIT - usage.count),
+        remaining: Math.max(0, DAILY_LIMIT - (usageCount - 1)),
         limit: DAILY_LIMIT,
       });
     }
@@ -190,11 +230,28 @@ Estilo:
 
     return res.status(200).json({
       answer: clean(answer),
-      remaining: Math.max(0, DAILY_LIMIT - usage.count),
+      remaining: Math.max(0, DAILY_LIMIT - usageCount),
       limit: DAILY_LIMIT,
     });
-  } catch (error) {
-    console.error(error);
+  } catch (error: any) {
+    console.error("Tulipa API error:", error);
+
+    if (usageRef && usageCount > 0) {
+      await usageRef.set(
+        {
+          count: Math.max(0, usageCount - 1),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      ).catch(() => {});
+    }
+
+    if (error?.message === "FIREBASE_ADMIN_MISSING") {
+      return res.status(500).json({
+        error: "A conexão segura da Tulipa IA ainda não foi configurada.",
+      });
+    }
+
     return res.status(500).json({
       error: "O jardim da Tulipa IA teve um imprevisto. Tente novamente em alguns instantes.",
     });
