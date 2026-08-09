@@ -1,0 +1,175 @@
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
+
+const DEFAULT_CONFIG = {
+  dailyLimit: 20,
+  betaMessage: "🧪 Beta: mensagens diárias são limitadas para manter o teste estável.",
+  assistantSubtitle: "Assistente geral em fase de testes",
+  maintenanceMode: false,
+  maintenanceMessage: "🌷 A Tulipa IA está em manutenção. Volte em alguns instantes.",
+};
+
+function getAdminApp() {
+  if (getApps().length) return getApps()[0];
+
+  const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY
+    ?.replace(/^["']|["']$/g, "")
+    .replace(/\\n/g, "\n")
+    .trim();
+
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error("FIREBASE_ADMIN_MISSING");
+  }
+
+  return initializeApp({
+    credential: cert({
+      projectId,
+      clientEmail,
+      privateKey,
+    }),
+  });
+}
+
+function todayKey() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+async function verifyAdmin(req: VercelRequest) {
+  const app = getAdminApp();
+  const auth = getAuth(app);
+
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
+  if (!token) throw new Error("ADMIN_DENIED");
+
+  const decoded = await auth.verifyIdToken(token);
+  const email = String(decoded.email || "").trim().toLowerCase();
+  const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const code = String(req.body?.code || "");
+  const expectedCode = String(process.env.ADMIN_ACCESS_CODE || "");
+
+  if (!adminEmail || !expectedCode) throw new Error("ADMIN_NOT_CONFIGURED");
+  if (email !== adminEmail || code !== expectedCode) throw new Error("ADMIN_DENIED");
+
+  return { app, auth, decoded };
+}
+
+async function readConfig(db: FirebaseFirestore.Firestore) {
+  const snap = await db.collection("admin_config").doc("global").get();
+
+  return {
+    ...DEFAULT_CONFIG,
+    ...(snap.exists ? snap.data() || {} : {}),
+  };
+}
+
+async function buildDashboard() {
+  const app = getAdminApp();
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const [config, authUsers, todayUsage] = await Promise.all([
+    readConfig(db),
+    auth.listUsers(100),
+    db.collection("tulipa_usage").where("date", "==", todayKey()).get(),
+  ]);
+
+  let conversations = 0;
+  try {
+    const aggregate = await db.collectionGroup("conversations").count().get();
+    conversations = Number(aggregate.data().count || 0);
+  } catch {
+    conversations = 0;
+  }
+
+  const messagesToday = todayUsage.docs.reduce(
+    (total, item) => total + Number(item.data()?.count || 0),
+    0
+  );
+
+  return {
+    config,
+    stats: {
+      users: authUsers.users.length,
+      conversations,
+      messagesToday,
+    },
+    users: authUsers.users.map((item) => ({
+      uid: item.uid,
+      email: item.email || "",
+      displayName: item.displayName || "",
+      disabled: item.disabled,
+    })),
+  };
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Método não permitido." });
+  }
+
+  try {
+    await verifyAdmin(req);
+
+    const action = String(req.body?.action || "unlock");
+    const db = getFirestore(getAdminApp());
+
+    if (action === "unlock" || action === "dashboard") {
+      const dashboard = await buildDashboard();
+      return res.status(200).json(dashboard);
+    }
+
+    if (action === "updateConfig") {
+      const raw = req.body?.config || {};
+
+      const config = {
+        dailyLimit: Math.min(1000, Math.max(1, Number(raw.dailyLimit || 20))),
+        betaMessage:
+          typeof raw.betaMessage === "string"
+            ? raw.betaMessage.slice(0, 500)
+            : DEFAULT_CONFIG.betaMessage,
+        assistantSubtitle:
+          typeof raw.assistantSubtitle === "string"
+            ? raw.assistantSubtitle.slice(0, 120)
+            : DEFAULT_CONFIG.assistantSubtitle,
+        maintenanceMode: Boolean(raw.maintenanceMode),
+        maintenanceMessage:
+          typeof raw.maintenanceMessage === "string"
+            ? raw.maintenanceMessage.slice(0, 500)
+            : DEFAULT_CONFIG.maintenanceMessage,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await db.collection("admin_config").doc("global").set(config, { merge: true });
+
+      return res.status(200).json({
+        ok: true,
+        config,
+      });
+    }
+
+    return res.status(400).json({ error: "Ação administrativa inválida." });
+  } catch (error: any) {
+    console.error("Admin API error:", error);
+
+    if (error?.message === "ADMIN_NOT_CONFIGURED") {
+      return res.status(503).json({
+        error: "O acesso administrativo ainda não foi configurado na Vercel.",
+      });
+    }
+
+    return res.status(403).json({
+      error: "Acesso administrativo negado.",
+    });
+  }
+}
