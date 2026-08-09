@@ -520,11 +520,20 @@ export default function App() {
         <div className="sidebar-brand">
           <TulipLogo />
           {sidebarOpen && (
-            <div>
+            <div className="sidebar-brand-text">
               <strong>Tulipa IA</strong>
               <span>Beta</span>
             </div>
           )}
+
+          <button
+            className="mobile-close-sidebar"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Fechar menu"
+            title="Fechar menu"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         <button className="new-chat" onClick={createConversation}>
