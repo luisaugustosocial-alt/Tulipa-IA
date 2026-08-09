@@ -8,6 +8,11 @@ const DEFAULT_CONFIG = {
   assistantSubtitle: "Assistente geral em fase de testes",
   maintenanceMode: false,
   maintenanceMessage: "🌷 A Tulipa IA está em manutenção. Volte em alguns instantes.",
+  showBetaMessage: true,
+  showDailyCounter: true,
+  welcomeMessage: "Oi! Eu sou a Tulipa IA 🌷. Posso ajudar com estudos, textos, ideias, organização, explicações e dúvidas simples do dia a dia. O que vamos fazer?",
+  loginSubtitle: "Uma assistente para estudar, organizar ideias, escrever e resolver dúvidas simples do dia a dia.",
+  registrationsEnabled: true,
 };
 
 function getAdminApp() {
