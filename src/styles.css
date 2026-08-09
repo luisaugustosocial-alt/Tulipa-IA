@@ -618,3 +618,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
     justify-content: center;
   }
 }
+
+.admin-user-action {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 7px 9px;
+  font-size: .7rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.admin-user-action:hover {
+  background: var(--brand-soft);
+}
