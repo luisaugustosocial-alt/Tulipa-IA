@@ -9,6 +9,11 @@ const DEFAULT_CONFIG = {
   assistantSubtitle: "Assistente geral em fase de testes",
   maintenanceMode: false,
   maintenanceMessage: "🌷 A Tulipa IA está em manutenção. Volte em alguns instantes.",
+  showBetaMessage: true,
+  showDailyCounter: true,
+  welcomeMessage: "Oi! Eu sou a Tulipa IA 🌷. Posso ajudar com estudos, textos, ideias, organização, explicações e dúvidas simples do dia a dia. O que vamos fazer?",
+  loginSubtitle: "Uma assistente para estudar, organizar ideias, escrever e resolver dúvidas simples do dia a dia.",
+  registrationsEnabled: true,
 };
 
 function getAdminApp() {
@@ -21,22 +26,15 @@ function getAdminApp() {
     .replace(/\\n/g, "\n")
     .trim();
 
-  const missingFirebase: string[] = [];
-  if (!projectId) missingFirebase.push("FIREBASE_PROJECT_ID");
-  if (!clientEmail) missingFirebase.push("FIREBASE_CLIENT_EMAIL");
-  if (!privateKey) missingFirebase.push("FIREBASE_PRIVATE_KEY");
-
-  if (missingFirebase.length) {
-    const error = new Error("FIREBASE_ADMIN_MISSING");
-    (error as any).missing = missingFirebase;
-    throw error;
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error("FIREBASE_ADMIN_MISSING");
   }
 
   return initializeApp({
     credential: cert({
-      projectId: projectId!,
-      clientEmail: clientEmail!,
-      privateKey: privateKey!,
+      projectId,
+      clientEmail,
+      privateKey,
     }),
   });
 }
@@ -51,19 +49,6 @@ function todayKey() {
 }
 
 async function verifyAdmin(req: VercelRequest) {
-  const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
-  const expectedCode = String(process.env.ADMIN_ACCESS_CODE || "").trim();
-
-  const missingAdmin: string[] = [];
-  if (!adminEmail) missingAdmin.push("ADMIN_EMAIL");
-  if (!expectedCode) missingAdmin.push("ADMIN_ACCESS_CODE");
-
-  if (missingAdmin.length) {
-    const error = new Error("ADMIN_NOT_CONFIGURED");
-    (error as any).missing = missingAdmin;
-    throw error;
-  }
-
   const app = getAdminApp();
   const auth = getAuth(app);
 
@@ -74,20 +59,23 @@ async function verifyAdmin(req: VercelRequest) {
 
   const decoded = await auth.verifyIdToken(token);
   const email = String(decoded.email || "").trim().toLowerCase();
-  const code = String(req.body?.code || "").trim();
+  const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const code = String(req.body?.code || "");
+  const expectedCode = String(process.env.ADMIN_ACCESS_CODE || "");
 
-  if (email !== adminEmail || code !== expectedCode) {
-    const error = new Error("ADMIN_DENIED");
-    (error as any).reason = email !== adminEmail ? "EMAIL_MISMATCH" : "CODE_MISMATCH";
-    throw error;
-  }
+  if (!adminEmail || !expectedCode) throw new Error("ADMIN_NOT_CONFIGURED");
+  if (email !== adminEmail || code !== expectedCode) throw new Error("ADMIN_DENIED");
 
   return { app, auth, decoded };
 }
 
 async function readConfig(db: FirebaseFirestore.Firestore) {
   const snap = await db.collection("admin_config").doc("global").get();
-  return { ...DEFAULT_CONFIG, ...(snap.exists ? snap.data() || {} : {}) };
+
+  return {
+    ...DEFAULT_CONFIG,
+    ...(snap.exists ? snap.data() || {} : {}),
+  };
 }
 
 async function buildDashboard() {
@@ -105,7 +93,9 @@ async function buildDashboard() {
   try {
     const aggregate = await db.collectionGroup("conversations").count().get();
     conversations = Number(aggregate.data().count || 0);
-  } catch {}
+  } catch {
+    conversations = 0;
+  }
 
   const messagesToday = todayUsage.docs.reduce(
     (total, item) => total + Number(item.data()?.count || 0),
@@ -114,7 +104,11 @@ async function buildDashboard() {
 
   return {
     config,
-    stats: { users: authUsers.users.length, conversations, messagesToday },
+    stats: {
+      users: authUsers.users.length,
+      conversations,
+      messagesToday,
+    },
     users: authUsers.users.map((item) => ({
       uid: item.uid,
       email: item.email || "",
@@ -136,22 +130,76 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const db = getFirestore(getAdminApp());
 
     if (action === "unlock" || action === "dashboard") {
-      return res.status(200).json(await buildDashboard());
+      const dashboard = await buildDashboard();
+      return res.status(200).json(dashboard);
     }
 
     if (action === "updateConfig") {
       const raw = req.body?.config || {};
+
       const config = {
         dailyLimit: Math.min(1000, Math.max(1, Number(raw.dailyLimit || 20))),
-        betaMessage: typeof raw.betaMessage === "string" ? raw.betaMessage.slice(0, 500) : DEFAULT_CONFIG.betaMessage,
-        assistantSubtitle: typeof raw.assistantSubtitle === "string" ? raw.assistantSubtitle.slice(0, 120) : DEFAULT_CONFIG.assistantSubtitle,
+        betaMessage:
+          typeof raw.betaMessage === "string"
+            ? raw.betaMessage.slice(0, 500)
+            : DEFAULT_CONFIG.betaMessage,
+        assistantSubtitle:
+          typeof raw.assistantSubtitle === "string"
+            ? raw.assistantSubtitle.slice(0, 120)
+            : DEFAULT_CONFIG.assistantSubtitle,
         maintenanceMode: Boolean(raw.maintenanceMode),
-        maintenanceMessage: typeof raw.maintenanceMessage === "string" ? raw.maintenanceMessage.slice(0, 500) : DEFAULT_CONFIG.maintenanceMessage,
+        maintenanceMessage:
+          typeof raw.maintenanceMessage === "string"
+            ? raw.maintenanceMessage.slice(0, 500)
+            : DEFAULT_CONFIG.maintenanceMessage,
+        showBetaMessage:
+          typeof raw.showBetaMessage === "boolean"
+            ? raw.showBetaMessage
+            : DEFAULT_CONFIG.showBetaMessage,
+        showDailyCounter:
+          typeof raw.showDailyCounter === "boolean"
+            ? raw.showDailyCounter
+            : DEFAULT_CONFIG.showDailyCounter,
+        welcomeMessage:
+          typeof raw.welcomeMessage === "string"
+            ? raw.welcomeMessage.slice(0, 1000)
+            : DEFAULT_CONFIG.welcomeMessage,
+        loginSubtitle:
+          typeof raw.loginSubtitle === "string"
+            ? raw.loginSubtitle.slice(0, 500)
+            : DEFAULT_CONFIG.loginSubtitle,
+        registrationsEnabled:
+          typeof raw.registrationsEnabled === "boolean"
+            ? raw.registrationsEnabled
+            : DEFAULT_CONFIG.registrationsEnabled,
         updatedAt: new Date().toISOString(),
       };
 
       await db.collection("admin_config").doc("global").set(config, { merge: true });
-      return res.status(200).json({ ok: true, config });
+
+      return res.status(200).json({
+        ok: true,
+        config,
+      });
+    }
+
+    if (action === "setUserDisabled") {
+      const uid = String(req.body?.uid || "");
+      const disabled = Boolean(req.body?.disabled);
+
+      if (!uid) return res.status(400).json({ error: "UID inválido." });
+
+      await getAuth(getAdminApp()).updateUser(uid, { disabled });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === "resetUserUsage") {
+      const uid = String(req.body?.uid || "");
+      if (!uid) return res.status(400).json({ error: "UID inválido." });
+
+      const db = getFirestore(getAdminApp());
+      await db.collection("tulipa_usage").doc(`${uid}_${todayKey()}`).delete().catch(() => {});
+      return res.status(200).json({ ok: true });
     }
 
     return res.status(400).json({ error: "Ação administrativa inválida." });
@@ -161,24 +209,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (error?.message === "ADMIN_NOT_CONFIGURED") {
       return res.status(503).json({
         error: "O acesso administrativo ainda não foi configurado na Vercel.",
-        missing: error?.missing || [],
       });
     }
 
-    if (error?.message === "FIREBASE_ADMIN_MISSING") {
-      return res.status(503).json({
-        error: "O Firebase Admin ainda não foi configurado completamente na Vercel.",
-        missing: error?.missing || [],
-      });
-    }
-
-    if (error?.message === "ADMIN_DENIED") {
-      return res.status(403).json({
-        error: "Acesso administrativo negado.",
-        reason: error?.reason || "UNKNOWN",
-      });
-    }
-
-    return res.status(500).json({ error: "Erro interno no painel administrativo." });
+    return res.status(403).json({
+      error: "Acesso administrativo negado.",
+    });
   }
 }
