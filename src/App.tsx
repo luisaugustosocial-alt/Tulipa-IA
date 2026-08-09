@@ -164,8 +164,18 @@ function LoginScreen({
       <div className="auth-glow auth-glow-b" />
 
       <section className="auth-card">
-        <div className="brand-mark">🌷</div>
-        <h1>Tulipa IA</h1>
+        <div className="brand-mark">
+          <img
+            src="/brand/tulipa-symbol.png"
+            alt="Símbolo da Tulipa.ia"
+            className="brand-symbol-image"
+          />
+        </div>
+        <img
+          src="/brand/tulipa-logo.png"
+          alt="Tulipa.ia"
+          className="auth-main-logo"
+        />
         <p className="auth-subtitle">{loginSubtitle}</p>
 
         <div className="auth-tabs">
@@ -227,11 +237,13 @@ function LoginScreen({
   );
 }
 
-function TulipLogo() {
+function TulipLogo({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="tulip-logo" aria-hidden="true">
-      <span>🌷</span>
-    </div>
+    <img
+      src={compact ? "/brand/tulipa-symbol.png" : "/brand/tulipa-logo.png"}
+      alt={compact ? "Símbolo da Tulipa.ia" : "Tulipa.ia"}
+      className={compact ? "tulip-symbol-image" : "tulip-brand-image"}
+    />
   );
 }
 
@@ -1082,11 +1094,10 @@ export default function App() {
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
         <div className="sidebar-brand">
-          <TulipLogo />
+          <TulipLogo compact={!sidebarOpen} />
           {sidebarOpen && (
             <div className="sidebar-brand-text">
-              <strong>Tulipa IA</strong>
-              <span>Beta</span>
+              <span>{publicConfig.showBetaMessage ? "Beta" : ""}</span>
             </div>
           )}
 
@@ -1201,7 +1212,15 @@ export default function App() {
               key={message.id}
               className={`message ${message.role === "user" ? "user" : "assistant"}`}
             >
-              {message.role === "assistant" && <div className="message-avatar">🌷</div>}
+              {message.role === "assistant" && (
+                <div className="message-avatar">
+                  <img
+                    src="/brand/tulipa-symbol.png"
+                    alt="Tulipa.ia"
+                    className="message-logo-image"
+                  />
+                </div>
+              )}
               <div>
                 <div className="bubble">{message.text}</div>
                 <time>{formatTime(message.createdAt)}</time>
@@ -1211,7 +1230,13 @@ export default function App() {
 
           {sending && (
             <article className="message assistant">
-              <div className="message-avatar">🌷</div>
+              <div className="message-avatar">
+                <img
+                  src="/brand/tulipa-symbol.png"
+                  alt="Tulipa.ia"
+                  className="message-logo-image"
+                />
+              </div>
               <div className="typing-bubble">
                 <span />
                 <span />
