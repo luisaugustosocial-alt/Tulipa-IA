@@ -4,6 +4,12 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 const DEFAULT_DAILY_LIMIT = 20;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+]);
 
 function getAdminApp() {
   if (getApps().length) return getApps()[0];
@@ -63,10 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const configSnap = await db.collection("admin_config").doc("global").get();
     const configData = configSnap.exists ? configSnap.data() || {} : {};
-    const dailyLimit = Math.max(
-      1,
-      Number(configData.dailyLimit || DEFAULT_DAILY_LIMIT)
-    );
+    const dailyLimit = Math.max(1, Number(configData.dailyLimit || DEFAULT_DAILY_LIMIT));
     const maintenanceMode = Boolean(configData.maintenanceMode);
     const maintenanceMessage =
       typeof configData.maintenanceMessage === "string" && configData.maintenanceMessage.trim()
@@ -97,9 +100,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const message =
       typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const history = Array.isArray(req.body?.history) ? req.body.history : [];
+    const attachment = req.body?.attachment;
 
-    if (!message) {
-      return res.status(400).json({ error: "Digite uma mensagem." });
+    let attachmentPart: any = null;
+    let attachmentName = "";
+
+    if (attachment) {
+      const mimeType =
+        typeof attachment.mimeType === "string" ? attachment.mimeType.trim() : "";
+      const data =
+        typeof attachment.data === "string" ? attachment.data.trim() : "";
+      attachmentName =
+        typeof attachment.name === "string" ? attachment.name.trim().slice(0, 180) : "anexo";
+
+      if (!ALLOWED_ATTACHMENT_TYPES.has(mimeType)) {
+        return res.status(400).json({
+          error: "Formato não permitido. Envie PDF, JPG, JPEG ou PNG.",
+        });
+      }
+
+      if (!data) {
+        return res.status(400).json({ error: "O anexo está vazio." });
+      }
+
+      const estimatedBytes = Math.floor((data.length * 3) / 4);
+      if (estimatedBytes > MAX_ATTACHMENT_BYTES) {
+        return res.status(413).json({
+          error: "O anexo ultrapassa o limite de 10 MB.",
+        });
+      }
+
+      attachmentPart = {
+        inlineData: {
+          mimeType,
+          data,
+        },
+      };
+    }
+
+    if (!message && !attachmentPart) {
+      return res.status(400).json({ error: "Digite uma mensagem ou envie um anexo." });
     }
 
     usageRef = db.collection("tulipa_usage").doc(`${uid}_${todayKey()}`);
@@ -155,7 +195,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const contents = history
+    const contents: any[] = history
       .filter(
         (item: any) =>
           item &&
@@ -168,9 +208,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         parts: [{ text: item.text }],
       }));
 
+    const userParts: any[] = [];
+    if (message) userParts.push({ text: message });
+    if (attachmentPart) {
+      userParts.push({
+        text: `Analise o arquivo anexado${attachmentName ? ` chamado "${attachmentName}"` : ""} e use seu conteúdo para responder ao pedido do usuário.`,
+      });
+      userParts.push(attachmentPart);
+    }
+
     contents.push({
       role: "user",
-      parts: [{ text: message }],
+      parts: userParts,
     });
 
     const response = await fetch(
@@ -194,7 +243,10 @@ Você pode ajudar com:
 - ideias e planejamento;
 - cálculos simples;
 - dúvidas gerais do cotidiano;
-- trabalhos e tarefas de baixa complexidade.
+- trabalhos e tarefas de baixa complexidade;
+- análise de PDFs e imagens enviados pelo usuário.
+
+Quando receber um anexo, analise apenas o conteúdo disponível nele e deixe claro quando algo não estiver legível ou não puder ser determinado.
 
 Quando o assunto exigir informação profissional, médica, jurídica, financeira ou muito atual, deixe claro quando houver limites e não invente fatos.
 
@@ -225,15 +277,16 @@ Estilo:
     }
 
     if (!response.ok) {
-      // A mensagem não deve consumir a cota quando o Gemini falhar.
       if (usageRef) {
-        await usageRef.set(
-          {
-            count: Math.max(0, usageCount - 1),
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        ).catch(() => {});
+        await usageRef
+          .set(
+            {
+              count: Math.max(0, usageCount - 1),
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          )
+          .catch(() => {});
       }
 
       const detail = data?.error?.message || "Erro ao consultar a IA.";
@@ -258,13 +311,15 @@ Estilo:
     console.error("Tulipa API error:", error);
 
     if (usageRef && usageCount > 0) {
-      await usageRef.set(
-        {
-          count: Math.max(0, usageCount - 1),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      ).catch(() => {});
+      await usageRef
+        .set(
+          {
+            count: Math.max(0, usageCount - 1),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        )
+        .catch(() => {});
     }
 
     if (error?.message === "FIREBASE_ADMIN_MISSING") {
