@@ -4,6 +4,7 @@ import {
   Bot,
   LogOut,
   Menu,
+  Mic,
   Moon,
   Plus,
   Send,
@@ -268,6 +269,8 @@ export default function App() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminSaving, setAdminSaving] = useState(false);
   const [chatLoading, setChatLoading] = useState(true);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const active = useMemo(
@@ -559,6 +562,48 @@ export default function App() {
     } finally {
       setAdminSaving(false);
     }
+  }
+
+  function toggleVoiceInput() {
+    if (typeof window === "undefined") return;
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("O reconhecimento de voz não é compatível com este navegador. Tente usar o Chrome ou Edge.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+      recognitionRef.current = recognition;
+      setListening(true);
+    };
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      if (transcript.trim()) setInput(transcript.trim());
+    };
+    recognition.onerror = (event: any) => {
+      if (event.error !== "aborted" && event.error !== "no-speech") {
+        alert("Não foi possível reconhecer sua voz. Verifique a permissão do microfone e tente novamente.");
+      }
+      setListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.start();
   }
 
   async function send() {
@@ -1264,6 +1309,16 @@ export default function App() {
               }}
               rows={1}
             />
+            <button
+              className={`mic-button ${listening ? "listening" : ""}`}
+              onClick={toggleVoiceInput}
+              disabled={sending}
+              type="button"
+              aria-label={listening ? "Parar de ouvir" : "Falar com a Tulipa"}
+              title={listening ? "Ouvindo... clique para parar" : "Mensagem por voz"}
+            >
+              <Mic size={18} />
+            </button>
             <button
               className="send-button"
               onClick={send}
