@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import {
   Bot,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
   LogOut,
   Menu,
   Mic,
@@ -51,6 +54,18 @@ type Message = {
   role: Role;
   text: string;
   createdAt: number;
+  attachment?: {
+    name: string;
+    mimeType: string;
+    kind: "pdf" | "image";
+  };
+};
+
+type PendingAttachment = {
+  name: string;
+  mimeType: string;
+  data: string;
+  kind: "pdf" | "image";
 };
 
 type Conversation = {
@@ -294,7 +309,9 @@ export default function App() {
   const [feedbackType, setFeedbackType] = useState("Sugestão");
   const [feedbackText, setFeedbackText] = useState("");
   const [listening, setListening] = useState(false);
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const recognitionRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const active = useMemo(
@@ -625,6 +642,7 @@ export default function App() {
     setConversations((prev) => [fresh, ...prev]);
     setActiveId(fresh.id);
     setInput("");
+    setAttachment(null);
 
     persistConversation(fresh).catch((error) => {
       console.error("Falha ao salvar a nova conversa:", error);
@@ -805,11 +823,53 @@ export default function App() {
     recognition.start();
   }
 
+  function chooseAttachment() {
+    if (sending) return;
+    fileInputRef.current?.click();
+  }
+
+  function handleAttachment(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+    if (!allowedTypes.includes(file.type)) {
+      alert("Envie apenas PDF, JPG, JPEG ou PNG.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("O arquivo deve ter no máximo 10 MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const commaIndex = result.indexOf(",");
+      if (commaIndex < 0) {
+        alert("Não foi possível ler o arquivo.");
+        return;
+      }
+
+      setAttachment({
+        name: file.name,
+        mimeType: file.type,
+        data: result.slice(commaIndex + 1),
+        kind: file.type === "application/pdf" ? "pdf" : "image",
+      });
+    };
+    reader.onerror = () => alert("Não foi possível ler o arquivo.");
+    reader.readAsDataURL(file);
+  }
+
   async function send() {
     const text = input.trim();
-    if (!text || !user || sending) return;
+    const currentAttachment = attachment;
+    if ((!text && !currentAttachment) || !user || sending) return;
 
-    if (text.startsWith("#")) {
+    if (text.startsWith("#") && !currentAttachment) {
       setInput("");
       const unlocked = await unlockAdmin(text);
 
@@ -849,19 +909,27 @@ export default function App() {
     }
 
     setInput("");
+    setAttachment(null);
     setSending(true);
 
     const userMessage: Message = {
       id: makeId("msg"),
       role: "user",
-      text,
+      text: text || (currentAttachment ? `📎 ${currentAttachment.name}` : ""),
       createdAt: Date.now(),
+      attachment: currentAttachment
+        ? {
+            name: currentAttachment.name,
+            mimeType: currentAttachment.mimeType,
+            kind: currentAttachment.kind,
+          }
+        : undefined,
     };
 
     const historyBefore = base.messages;
     const nextTitle =
       base.title === "Nova conversa"
-        ? text.replace(/\s+/g, " ").slice(0, 42)
+        ? (text || currentAttachment?.name || "Novo anexo").replace(/\s+/g, " ").slice(0, 42)
         : base.title;
 
     const withUser: Conversation = {
@@ -892,6 +960,13 @@ export default function App() {
             .filter((m) => m.role === "user" || m.role === "assistant")
             .slice(-18)
             .map((m) => ({ role: m.role, text: m.text })),
+          attachment: currentAttachment
+            ? {
+                name: currentAttachment.name,
+                mimeType: currentAttachment.mimeType,
+                data: currentAttachment.data,
+              }
+            : null,
         }),
       });
 
@@ -1712,7 +1787,15 @@ export default function App() {
                 </div>
               )}
               <div>
-                <div className="bubble">{message.text}</div>
+                <div className="bubble">
+                  {message.attachment && (
+                    <div className="message-attachment">
+                      {message.attachment.kind === "pdf" ? <FileText size={16} /> : <ImageIcon size={16} />}
+                      <span>{message.attachment.name}</span>
+                    </div>
+                  )}
+                  {message.text && <span>{message.text}</span>}
+                </div>
                 <time>{formatTime(message.createdAt)}</time>
               </div>
             </article>
@@ -1741,7 +1824,43 @@ export default function App() {
           {publicConfig.showBetaMessage && (
             <div className="beta-banner">{publicConfig.betaMessage}</div>
           )}
+          {attachment && (
+            <div className="attachment-preview">
+              <div className="attachment-preview-icon">
+                {attachment.kind === "pdf" ? <FileText size={19} /> : <ImageIcon size={19} />}
+              </div>
+              <div className="attachment-preview-info">
+                <strong>{attachment.name}</strong>
+                <span>{attachment.kind === "pdf" ? "PDF" : "Imagem"} · pronto para enviar</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                aria-label="Remover anexo"
+                title="Remover anexo"
+              >
+                <X size={17} />
+              </button>
+            </div>
+          )}
           <div className="composer">
+            <input
+              ref={fileInputRef}
+              className="attachment-input"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              onChange={handleAttachment}
+            />
+            <button
+              className="attach-button"
+              onClick={chooseAttachment}
+              disabled={sending}
+              type="button"
+              aria-label="Anexar PDF ou imagem"
+              title="Anexar PDF ou imagem"
+            >
+              <Paperclip size={18} />
+            </button>
             <textarea
               value={input}
               placeholder="Converse com a Tulipa IA..."
@@ -1767,7 +1886,7 @@ export default function App() {
             <button
               className="send-button"
               onClick={send}
-              disabled={sending || remaining <= 0}
+              disabled={sending || remaining <= 0 || (!input.trim() && !attachment)}
               title={remaining <= 0 ? "Limite diário atingido" : "Enviar"}
             >
               <Send size={18} />
