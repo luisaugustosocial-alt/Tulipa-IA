@@ -25,10 +25,15 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updateProfile,
+  verifyBeforeUpdateEmail,
+  sendPasswordResetEmail,
+  deleteUser,
   type User,
 } from "firebase/auth";
 import {
   collection,
+  addDoc,
   deleteDoc,
   doc,
   getDocs,
@@ -269,6 +274,13 @@ export default function App() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminSaving, setAdminSaving] = useState(false);
   const [chatLoading, setChatLoading] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState("");
+  const [displayNameInput, setDisplayNameInput] = useState("");
+  const [emailInput, setEmailInput] = useState("");
+  const [feedbackType, setFeedbackType] = useState("Sugestão");
+  const [feedbackText, setFeedbackText] = useState("");
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -398,6 +410,181 @@ export default function App() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [active?.messages, sending]);
+
+  useEffect(() => {
+    if (!user) return;
+    setDisplayNameInput(user.displayName || "");
+    setEmailInput(user.email || "");
+  }, [user]);
+
+  async function saveDisplayName() {
+    if (!user) return;
+    const name = displayNameInput.trim();
+    if (!name) {
+      setSettingsMessage("Digite um nome válido.");
+      return;
+    }
+
+    setSettingsBusy(true);
+    setSettingsMessage("");
+    try {
+      await updateProfile(user, { displayName: name });
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          displayName: name,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setSettingsMessage("Nome atualizado.");
+    } catch (error: any) {
+      setSettingsMessage(error?.message || "Não foi possível atualizar o nome.");
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function requestEmailChange() {
+    if (!user) return;
+    const nextEmail = emailInput.trim();
+
+    if (!nextEmail || nextEmail === user.email) {
+      setSettingsMessage("Digite um e-mail diferente do atual.");
+      return;
+    }
+
+    setSettingsBusy(true);
+    setSettingsMessage("");
+    try {
+      await verifyBeforeUpdateEmail(user, nextEmail);
+      setSettingsMessage(
+        "Enviamos um link de confirmação para o novo e-mail. Depois de confirmar, entre novamente se necessário."
+      );
+    } catch (error: any) {
+      setSettingsMessage(
+        error?.code === "auth/requires-recent-login"
+          ? "Por segurança, saia da conta, entre novamente e tente alterar o e-mail."
+          : error?.message || "Não foi possível iniciar a alteração do e-mail."
+      );
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!user?.email) return;
+
+    setSettingsBusy(true);
+    setSettingsMessage("");
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      setSettingsMessage("Enviamos um e-mail para redefinir sua senha.");
+    } catch (error: any) {
+      setSettingsMessage(error?.message || "Não foi possível enviar o e-mail de redefinição.");
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function clearConversationHistory() {
+    if (!user) return;
+
+    const confirmed = window.confirm(
+      "Apagar todo o histórico de conversas? Esta ação não pode ser desfeita."
+    );
+    if (!confirmed) return;
+
+    setSettingsBusy(true);
+    setSettingsMessage("");
+    try {
+      const snap = await getDocs(
+        collection(db, "users", user.uid, "conversations")
+      );
+
+      await Promise.all(
+        snap.docs.map((item) =>
+          deleteDoc(doc(db, "users", user.uid, "conversations", item.id))
+        )
+      );
+
+      const fresh = buildConversation();
+      setConversations([fresh]);
+      setActiveId(fresh.id);
+      await persistConversation(fresh);
+      setSettingsMessage("Histórico apagado.");
+    } catch (error: any) {
+      setSettingsMessage(error?.message || "Não foi possível apagar o histórico.");
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function submitFeedback() {
+    if (!user) return;
+    const message = feedbackText.trim();
+
+    if (!message) {
+      setSettingsMessage("Escreva seu feedback antes de enviar.");
+      return;
+    }
+
+    setSettingsBusy(true);
+    setSettingsMessage("");
+    try {
+      await addDoc(collection(db, "feedback"), {
+        uid: user.uid,
+        email: user.email || "",
+        displayName: user.displayName || "",
+        type: feedbackType,
+        message,
+        createdAt: serverTimestamp(),
+        status: "novo",
+      });
+
+      setFeedbackText("");
+      setSettingsMessage("Feedback enviado. Obrigado!");
+    } catch (error: any) {
+      setSettingsMessage(error?.message || "Não foi possível enviar o feedback.");
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function deleteMyAccount() {
+    if (!user) return;
+
+    const confirmed = window.confirm(
+      "Excluir sua conta da Tulipa IA? Seu histórico será apagado e esta ação não poderá ser desfeita."
+    );
+    if (!confirmed) return;
+
+    setSettingsBusy(true);
+    setSettingsMessage("");
+
+    try {
+      const snap = await getDocs(
+        collection(db, "users", user.uid, "conversations")
+      );
+
+      await Promise.all(
+        snap.docs.map((item) =>
+          deleteDoc(doc(db, "users", user.uid, "conversations", item.id))
+        )
+      );
+
+      await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
+      await deleteUser(user);
+    } catch (error: any) {
+      setSettingsMessage(
+        error?.code === "auth/requires-recent-login"
+          ? "Por segurança, saia da conta, entre novamente e tente excluir a conta."
+          : error?.message || "Não foi possível excluir sua conta."
+      );
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
 
   function buildConversation(): Conversation {
     const now = Date.now();
@@ -1205,6 +1392,11 @@ export default function App() {
             </div>
           )}
 
+          <button onClick={() => setSettingsOpen(true)}>
+            <Settings size={18} />
+            {sidebarOpen && "Configurações"}
+          </button>
+
           <button onClick={() => setDark((v) => !v)}>
             {dark ? <Sun size={18} /> : <Moon size={18} />}
             {sidebarOpen && (dark ? "Modo claro" : "Modo escuro")}
@@ -1223,6 +1415,137 @@ export default function App() {
           aria-label="Fechar menu"
           onClick={() => setSidebarOpen(false)}
         />
+      )}
+
+      {settingsOpen && (
+        <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}>
+          <section
+            className="settings-modal"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Configurações da conta"
+          >
+            <div className="settings-header">
+              <div>
+                <strong>Configurações</strong>
+                <span>Conta, privacidade e feedback</span>
+              </div>
+              <button
+                className="icon-button"
+                onClick={() => setSettingsOpen(false)}
+                aria-label="Fechar configurações"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="settings-scroll">
+              <section className="settings-section">
+                <h3>Minha conta</h3>
+
+                <label>
+                  Nome
+                  <div className="settings-inline">
+                    <input
+                      value={displayNameInput}
+                      onChange={(e) => setDisplayNameInput(e.target.value)}
+                    />
+                    <button onClick={saveDisplayName} disabled={settingsBusy}>
+                      Salvar
+                    </button>
+                  </div>
+                </label>
+
+                <label>
+                  E-mail
+                  <div className="settings-inline">
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                    />
+                    <button onClick={requestEmailChange} disabled={settingsBusy}>
+                      Alterar
+                    </button>
+                  </div>
+                </label>
+
+                <button
+                  className="settings-secondary-button"
+                  onClick={resetPassword}
+                  disabled={settingsBusy}
+                >
+                  Redefinir senha
+                </button>
+              </section>
+
+              <section className="settings-section">
+                <h3>Privacidade e dados</h3>
+                <p>
+                  Apague todas as conversas salvas na sua conta e comece um histórico novo.
+                </p>
+                <button
+                  className="settings-danger-outline"
+                  onClick={clearConversationHistory}
+                  disabled={settingsBusy}
+                >
+                  Apagar histórico de conversas
+                </button>
+              </section>
+
+              <section className="settings-section">
+                <h3>Feedback</h3>
+                <label>
+                  Tipo
+                  <select
+                    value={feedbackType}
+                    onChange={(e) => setFeedbackType(e.target.value)}
+                  >
+                    <option>Sugestão</option>
+                    <option>Elogio</option>
+                    <option>Problema</option>
+                    <option>Outro</option>
+                  </select>
+                </label>
+
+                <label>
+                  Mensagem
+                  <textarea
+                    rows={5}
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder="Conte o que você achou da Tulipa IA..."
+                  />
+                </label>
+
+                <button
+                  className="settings-primary-button"
+                  onClick={submitFeedback}
+                  disabled={settingsBusy}
+                >
+                  Enviar feedback
+                </button>
+              </section>
+
+              <section className="settings-section settings-danger-zone">
+                <h3>Zona de perigo</h3>
+                <p>
+                  Excluir a conta remove o acesso e apaga o histórico de conversas.
+                </p>
+                <button
+                  className="settings-danger-button"
+                  onClick={deleteMyAccount}
+                  disabled={settingsBusy}
+                >
+                  Excluir minha conta
+                </button>
+              </section>
+
+              {settingsMessage && (
+                <div className="settings-message">{settingsMessage}</div>
+              )}
+            </div>
+          </section>
+        </div>
       )}
 
       <main className="chat-area">
@@ -1337,4 +1660,3 @@ export default function App() {
       <Analytics />
     </div>
   );
-}
