@@ -955,3 +955,146 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Feedbacks no painel administrativo */
+.feedback-count {
+  font-size: .72rem;
+  font-weight: 800;
+  color: var(--brand);
+  background: var(--brand-soft);
+  padding: 6px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.admin-feedback-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-empty-feedback {
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+}
+
+.admin-feedback-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  background: var(--panel-strong);
+}
+
+.admin-feedback-card.status-novo {
+  border-left: 4px solid var(--brand);
+}
+
+.admin-feedback-card.status-arquivado {
+  opacity: .72;
+}
+
+.admin-feedback-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.admin-feedback-top strong,
+.admin-feedback-top span {
+  display: block;
+}
+
+.admin-feedback-top strong {
+  margin-top: 7px;
+  font-size: .84rem;
+}
+
+.admin-feedback-top > div > span {
+  color: var(--muted);
+  font-size: .7rem;
+  margin-top: 2px;
+}
+
+.admin-feedback-top time {
+  color: var(--muted);
+  font-size: .68rem;
+  white-space: nowrap;
+}
+
+.admin-feedback-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-feedback-badges span {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: .65rem;
+  font-weight: 800;
+}
+
+.feedback-type {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.feedback-status {
+  border: 1px solid var(--line);
+}
+
+.feedback-status.novo {
+  color: var(--brand);
+}
+
+.feedback-status.lido {
+  color: #16794b;
+}
+
+.feedback-status.arquivado {
+  color: var(--muted);
+}
+
+.admin-feedback-message {
+  margin: 13px 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  font-size: .82rem;
+}
+
+.admin-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.admin-feedback-actions button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: .7rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.admin-feedback-actions .feedback-delete {
+  color: #b42318;
+}
+
+@media (max-width: 760px) {
+  .admin-feedback-top {
+    flex-direction: column;
+  }
+
+  .admin-feedback-top time {
+    white-space: normal;
+  }
+}
