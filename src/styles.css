@@ -730,3 +730,54 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
     height: 38px;
   }
 }
+
+/* Botão de mensagem por voz */
+.mic-button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.mic-button:hover {
+  background: var(--brand-soft);
+}
+
+.mic-button:active {
+  transform: scale(.95);
+}
+
+.mic-button:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
+
+.mic-button.listening {
+  background: var(--brand);
+  color: white;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--brand) 18%, transparent);
+  animation: tulipa-mic-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes tulipa-mic-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 16%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 9px color-mix(in srgb, var(--brand) 6%, transparent);
+  }
+}
+
+@media (max-width: 760px) {
+  .mic-button {
+    width: 42px;
+    height: 42px;
+  }
+}
