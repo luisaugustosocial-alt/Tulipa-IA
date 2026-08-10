@@ -80,6 +80,17 @@ type AdminUser = {
   disabled: boolean;
 };
 
+type AdminFeedback = {
+  id: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  type: string;
+  message: string;
+  status: string;
+  createdAt: string;
+};
+
 type AdminDashboardData = {
   config: PublicConfig;
   stats: {
@@ -88,6 +99,7 @@ type AdminDashboardData = {
     messagesToday: number;
   };
   users: AdminUser[];
+  feedbacks: AdminFeedback[];
 };
 
 const DEFAULT_DAILY_LIMIT = 20;
@@ -1313,6 +1325,116 @@ export default function App() {
                   </button>
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className="admin-panel-card">
+            <div className="admin-card-title">
+              <div>
+                <h2>Feedbacks recebidos</h2>
+                <p>Sugestões, elogios e problemas enviados pelos usuários.</p>
+              </div>
+              <span className="feedback-count">
+                {adminData.feedbacks?.length || 0} recebidos
+              </span>
+            </div>
+
+            <div className="admin-feedback-list">
+              {(adminData.feedbacks || []).length === 0 ? (
+                <div className="admin-empty-feedback">
+                  Nenhum feedback recebido ainda.
+                </div>
+              ) : (
+                adminData.feedbacks.map((feedback) => (
+                  <article
+                    className={`admin-feedback-card status-${feedback.status || "novo"}`}
+                    key={feedback.id}
+                  >
+                    <div className="admin-feedback-top">
+                      <div>
+                        <div className="admin-feedback-badges">
+                          <span className="feedback-type">{feedback.type || "Feedback"}</span>
+                          <span className={`feedback-status ${feedback.status || "novo"}`}>
+                            {feedback.status === "lido"
+                              ? "Lido"
+                              : feedback.status === "arquivado"
+                                ? "Arquivado"
+                                : "Novo"}
+                          </span>
+                        </div>
+                        <strong>{feedback.displayName || "Usuário"}</strong>
+                        <span>{feedback.email || "Sem e-mail"}</span>
+                      </div>
+                      <time>
+                        {feedback.createdAt
+                          ? new Date(feedback.createdAt).toLocaleString("pt-BR")
+                          : ""}
+                      </time>
+                    </div>
+
+                    <p className="admin-feedback-message">{feedback.message}</p>
+
+                    <div className="admin-feedback-actions">
+                      {feedback.status !== "lido" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await callAdmin("updateFeedbackStatus", {
+                                feedbackId: feedback.id,
+                                status: "lido",
+                              });
+                              await refreshAdmin();
+                            } catch (error: any) {
+                              alert(error?.message || "Não foi possível marcar como lido.");
+                            }
+                          }}
+                        >
+                          Marcar como lido
+                        </button>
+                      )}
+
+                      {feedback.status !== "arquivado" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await callAdmin("updateFeedbackStatus", {
+                                feedbackId: feedback.id,
+                                status: "arquivado",
+                              });
+                              await refreshAdmin();
+                            } catch (error: any) {
+                              alert(error?.message || "Não foi possível arquivar.");
+                            }
+                          }}
+                        >
+                          Arquivar
+                        </button>
+                      )}
+
+                      <button
+                        className="feedback-delete"
+                        onClick={async () => {
+                          const confirmed = window.confirm(
+                            "Excluir este feedback? Esta ação não pode ser desfeita."
+                          );
+                          if (!confirmed) return;
+
+                          try {
+                            await callAdmin("deleteFeedback", {
+                              feedbackId: feedback.id,
+                            });
+                            await refreshAdmin();
+                          } catch (error: any) {
+                            alert(error?.message || "Não foi possível excluir o feedback.");
+                          }
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
             </div>
           </section>
         </main>
