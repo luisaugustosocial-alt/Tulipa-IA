@@ -781,3 +781,177 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
     height: 42px;
   }
 }
+
+
+/* Configurações da conta */
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(8, 3, 10, .58);
+  backdrop-filter: blur(5px);
+}
+
+.settings-modal {
+  width: min(720px, 100%);
+  max-height: min(88vh, 820px);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--panel-strong);
+  color: var(--text);
+  box-shadow: 0 30px 100px rgba(0,0,0,.34);
+  overflow: hidden;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-header strong,
+.settings-header span {
+  display: block;
+}
+
+.settings-header strong {
+  font-size: 1.05rem;
+}
+
+.settings-header span {
+  color: var(--muted);
+  font-size: .74rem;
+  margin-top: 3px;
+}
+
+.settings-scroll {
+  overflow: auto;
+  max-height: calc(min(88vh, 820px) - 76px);
+  padding: 18px;
+}
+
+.settings-section {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+
+.settings-section h3 {
+  margin: 0 0 10px;
+  font-size: .95rem;
+}
+
+.settings-section p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
+.settings-section label {
+  display: grid;
+  gap: 7px;
+  font-size: .78rem;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.settings-section input,
+.settings-section textarea,
+.settings-section select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 11px 12px;
+}
+
+.settings-inline {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.settings-inline button,
+.settings-secondary-button,
+.settings-primary-button,
+.settings-danger-outline,
+.settings-danger-button {
+  border-radius: 12px;
+  padding: 10px 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.settings-inline button,
+.settings-secondary-button {
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.settings-primary-button {
+  border: 0;
+  background: linear-gradient(135deg,#54205f,#773484);
+  color: white;
+}
+
+.settings-danger-outline {
+  border: 1px solid rgba(180,35,24,.35);
+  background: transparent;
+  color: #b42318;
+}
+
+.settings-danger-button {
+  border: 0;
+  background: #b42318;
+  color: white;
+}
+
+.settings-danger-zone {
+  border-color: rgba(180,35,24,.22);
+}
+
+.settings-message {
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--text);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.settings-section button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .settings-backdrop {
+    padding: 0;
+    align-items: end;
+  }
+
+  .settings-modal {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .settings-scroll {
+    max-height: calc(92dvh - 76px);
+  }
+
+  .settings-inline {
+    grid-template-columns: 1fr;
+  }
+}
