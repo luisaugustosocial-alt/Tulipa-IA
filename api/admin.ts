@@ -83,10 +83,11 @@ async function buildDashboard() {
   const auth = getAuth(app);
   const db = getFirestore(app);
 
-  const [config, authUsers, todayUsage] = await Promise.all([
+  const [config, authUsers, todayUsage, feedbackSnap] = await Promise.all([
     readConfig(db),
     auth.listUsers(100),
     db.collection("tulipa_usage").where("date", "==", todayKey()).get(),
+    db.collection("feedback").orderBy("createdAt", "desc").limit(100).get(),
   ]);
 
   let conversations = 0;
@@ -115,6 +116,23 @@ async function buildDashboard() {
       displayName: item.displayName || "",
       disabled: item.disabled,
     })),
+    feedbacks: feedbackSnap.docs.map((item) => {
+      const data = item.data() || {};
+      const createdAt = data.createdAt?.toDate
+        ? data.createdAt.toDate().toISOString()
+        : "";
+
+      return {
+        id: item.id,
+        uid: String(data.uid || ""),
+        email: String(data.email || ""),
+        displayName: String(data.displayName || ""),
+        type: String(data.type || "Feedback"),
+        message: String(data.message || ""),
+        status: String(data.status || "novo"),
+        createdAt,
+      };
+    }),
   };
 }
 
@@ -199,6 +217,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const db = getFirestore(getAdminApp());
       await db.collection("tulipa_usage").doc(`${uid}_${todayKey()}`).delete().catch(() => {});
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === "updateFeedbackStatus") {
+      const feedbackId = String(req.body?.feedbackId || "");
+      const status = String(req.body?.status || "");
+
+      if (!feedbackId || !["novo", "lido", "arquivado"].includes(status)) {
+        return res.status(400).json({ error: "Dados do feedback inválidos." });
+      }
+
+      await db.collection("feedback").doc(feedbackId).set(
+        {
+          status,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === "deleteFeedback") {
+      const feedbackId = String(req.body?.feedbackId || "");
+
+      if (!feedbackId) {
+        return res.status(400).json({ error: "Feedback inválido." });
+      }
+
+      await db.collection("feedback").doc(feedbackId).delete();
       return res.status(200).json({ ok: true });
     }
 
