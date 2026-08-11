@@ -39,6 +39,7 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -93,6 +94,11 @@ type AdminUser = {
   email: string;
   displayName: string;
   disabled: boolean;
+  lastSeenAt: string;
+  lastActiveAt: string;
+  online: boolean;
+  privacyAccepted: boolean;
+  privacyPolicyVersion: string;
 };
 
 type AdminFeedback = {
@@ -143,6 +149,237 @@ function formatTime(ts: number) {
   });
 }
 
+
+const PRIVACY_POLICY_VERSION = "1.0";
+
+function PrivacyPolicyContent() {
+  return (
+    <div className="privacy-policy-text">
+      <h2>Política de Privacidade da Tulipa IA</h2>
+      <p className="privacy-version">Versão {PRIVACY_POLICY_VERSION}</p>
+
+      <h3>1. Apresentação</h3>
+      <p>
+        Esta Política de Privacidade explica como a Tulipa IA coleta, utiliza,
+        armazena, protege e trata informações relacionadas aos usuários durante
+        a utilização da plataforma. Ao criar uma conta e utilizar a Tulipa IA,
+        o usuário declara ter lido e compreendido esta Política.
+      </p>
+
+      <h3>2. Dados coletados</h3>
+      <p>
+        Para possibilitar o funcionamento da conta e dos serviços oferecidos,
+        poderão ser tratados dados como nome de usuário, endereço de e-mail,
+        identificador interno da conta, fotografia de perfil quando fornecida
+        por serviço de autenticação, registros de acesso e utilização, data e
+        horário do último acesso, informações técnicas necessárias ao
+        funcionamento do sistema, feedbacks enviados pelo usuário e conteúdo
+        das conversas realizadas com a Tulipa IA.
+      </p>
+
+      <h3>3. Dados de autenticação e senha</h3>
+      <p>
+        O administrador da Tulipa IA não possui acesso à senha utilizada pelo
+        usuário. As credenciais de autenticação são processadas pelos serviços
+        responsáveis pela autenticação da conta.
+      </p>
+      <p>
+        O administrador poderá ter acesso aos dados necessários para
+        identificação e gerenciamento da conta, incluindo principalmente o
+        endereço de e-mail utilizado para login, identificador da conta, nome
+        cadastrado, situação da conta e demais metadados administrativos.
+      </p>
+      <p>
+        Esse acesso poderá ser utilizado quando necessário para prestar suporte
+        ao usuário, identificar problemas de acesso, bloquear ou desativar
+        contas, excluir contas, auxiliar em procedimentos de recuperação de
+        acesso ou redefinição de senha e executar outras medidas administrativas
+        necessárias ao funcionamento e à segurança da plataforma.
+      </p>
+      <p>
+        A redefinição de senha não significa que o administrador terá
+        conhecimento da senha anterior ou da nova senha escolhida pelo usuário.
+      </p>
+
+      <h3>4. Conversas realizadas na Tulipa IA</h3>
+      <p>
+        As conversas poderão ser armazenadas vinculadas à conta do usuário para
+        possibilitar histórico, continuidade das conversas, funcionamento
+        adequado da plataforma, suporte técnico e demais funcionalidades
+        disponibilizadas.
+      </p>
+      <p>
+        O usuário deve estar ciente de que o administrador autorizado da Tulipa
+        IA poderá acessar o conteúdo das conversas quando isso for necessário
+        para administração do serviço, suporte técnico, investigação de falhas,
+        prevenção de abuso, segurança da plataforma, análise de denúncias,
+        cumprimento de obrigações legais ou melhoria do funcionamento do
+        serviço.
+      </p>
+      <p>
+        Esse acesso administrativo não autoriza o uso indiscriminado das
+        conversas para finalidades incompatíveis com a operação da Tulipa IA.
+      </p>
+
+      <h3>5. Finalidades do tratamento dos dados</h3>
+      <p>
+        Os dados poderão ser utilizados para criar e administrar contas;
+        autenticar usuários; manter o histórico das conversas; fornecer
+        respostas e funcionalidades da Tulipa IA; oferecer suporte; recuperar
+        ou administrar contas; detectar erros e abusos; proteger a segurança do
+        serviço; realizar manutenção; analisar feedbacks; melhorar
+        funcionalidades; cumprir obrigações legais; e exercer direitos
+        legítimos relacionados à operação e proteção da plataforma.
+      </p>
+
+      <h3>6. Serviços de terceiros</h3>
+      <p>
+        Para funcionar, a Tulipa IA poderá utilizar serviços tecnológicos de
+        terceiros, incluindo serviços de hospedagem, autenticação, banco de
+        dados, inteligência artificial, análise de funcionamento e
+        infraestrutura.
+      </p>
+      <p>
+        Determinadas informações poderão ser processadas por esses serviços na
+        medida necessária à execução das funcionalidades solicitadas pelo
+        usuário. O tratamento realizado por terceiros também poderá estar
+        sujeito às políticas e condições dos respectivos fornecedores.
+      </p>
+
+      <h3>7. Segurança das informações</h3>
+      <p>
+        A Tulipa IA busca adotar medidas técnicas e administrativas destinadas
+        a proteger os dados contra acessos não autorizados, alteração, perda,
+        destruição ou divulgação indevida.
+      </p>
+      <p>
+        Entretanto, nenhum sistema conectado à internet é totalmente imune a
+        falhas, ataques cibernéticos, invasões, vulnerabilidades ou incidentes
+        de segurança. Por esse motivo, a Tulipa IA não garante proteção absoluta
+        contra ações ilícitas praticadas por terceiros.
+      </p>
+      <p>
+        Caso seja identificado incidente relevante que possa envolver dados
+        pessoais, poderão ser adotadas as medidas técnicas, administrativas e
+        legais consideradas necessárias.
+      </p>
+
+      <h3>8. Responsabilidade do usuário</h3>
+      <p>
+        O usuário é responsável pela guarda e confidencialidade de suas
+        credenciais de acesso, pela utilização de senhas seguras e por evitar
+        compartilhar informações de acesso com terceiros.
+      </p>
+      <p>
+        O usuário também deve evitar inserir nas conversas informações
+        extremamente sensíveis ou dados pessoais de terceiros que não sejam
+        necessários para a utilização do serviço.
+      </p>
+
+      <h3>9. Histórico e exclusão de conversas</h3>
+      <p>
+        O usuário poderá utilizar as ferramentas disponibilizadas na plataforma
+        para apagar o histórico de conversas associado à sua conta.
+      </p>
+      <p>
+        A exclusão poderá remover os registros disponíveis ao usuário nos
+        sistemas ativos da plataforma, observadas eventuais necessidades
+        técnicas, legais, de segurança ou de preservação temporária de
+        registros.
+      </p>
+
+      <h3>10. Alteração de dados da conta</h3>
+      <p>
+        O usuário poderá solicitar ou realizar, conforme as funcionalidades
+        disponíveis, alteração de nome, alteração ou verificação de endereço de
+        e-mail, redefinição de senha e outras atualizações relacionadas à conta.
+      </p>
+      <p>
+        Algumas alterações poderão exigir nova autenticação ou confirmação de
+        identidade por razões de segurança.
+      </p>
+
+      <h3>11. Exclusão ou desativação da conta</h3>
+      <p>
+        O usuário poderá solicitar ou executar a exclusão da própria conta pelas
+        ferramentas disponibilizadas.
+      </p>
+      <p>
+        O administrador também poderá desativar, bloquear ou excluir contas
+        quando houver solicitação do titular, necessidade técnica, risco à
+        segurança, utilização abusiva, violação das regras do serviço,
+        determinação legal ou outra justificativa legítima relacionada ao
+        funcionamento da plataforma.
+      </p>
+
+      <h3>12. Feedbacks</h3>
+      <p>
+        Sugestões, elogios, críticas ou relatos de problemas enviados pelo
+        usuário poderão ser armazenados para análise administrativa e melhoria
+        da Tulipa IA.
+      </p>
+      <p>
+        O feedback poderá ficar associado ao nome, e-mail e identificador da
+        conta do usuário para possibilitar acompanhamento e resposta quando
+        necessário.
+      </p>
+
+      <h3>13. Direitos do usuário</h3>
+      <p>
+        Nos termos da legislação aplicável, o usuário poderá exercer direitos
+        relacionados aos seus dados pessoais, inclusive solicitar confirmação
+        da existência de tratamento, acesso, correção de informações inexatas e,
+        quando aplicável, eliminação ou outras providências previstas na
+        legislação.
+      </p>
+
+      <h3>14. Registros de utilização</h3>
+      <p>
+        A plataforma poderá registrar informações como último acesso,
+        utilização recente e estado de atividade da conta para fins de
+        funcionamento, segurança, administração e suporte.
+      </p>
+      <p>
+        A indicação de que um usuário está “online” poderá ser baseada em
+        registros técnicos recentes de atividade e não necessariamente
+        representar, com precisão absoluta, que a pessoa esteja olhando para a
+        plataforma naquele exato segundo.
+      </p>
+
+      <h3>15. Menores de idade</h3>
+      <p>
+        Caso a Tulipa IA seja disponibilizada para menores de idade, poderão ser
+        aplicadas medidas adicionais de proteção, consentimento ou verificação
+        conforme a legislação aplicável.
+      </p>
+
+      <h3>16. Alterações desta Política</h3>
+      <p>
+        Esta Política poderá ser atualizada sempre que houver mudanças
+        relevantes nas funcionalidades, na legislação, nos serviços utilizados
+        ou nas práticas de tratamento de dados.
+      </p>
+      <p>
+        Quando houver alteração relevante, a plataforma poderá solicitar
+        novamente a manifestação de ciência ou aceite do usuário.
+      </p>
+
+      <h3>17. Aceite</h3>
+      <p>
+        Ao marcar a opção “Li e aceito a Política de Privacidade”, o usuário
+        declara ter tido acesso ao conteúdo desta Política e concorda com o
+        tratamento de seus dados nos termos aqui descritos, sem prejuízo dos
+        direitos assegurados pela legislação aplicável.
+      </p>
+      <p>
+        O registro do aceite poderá conter data, horário, identificação da conta
+        e versão da Política aceita para fins de comprovação e administração do
+        serviço.
+      </p>
+    </div>
+  );
+}
+
 function LoginScreen({
   betaMessage,
   showBetaMessage,
@@ -159,16 +396,30 @@ function LoginScreen({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [privacyChecked, setPrivacyChecked] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
 
   async function handleEmail() {
     setBusy(true);
     setError("");
     try {
       if (mode === "register") {
+        if (!privacyChecked) {
+          throw new Error("Você precisa aceitar a Política de Privacidade para criar a conta.");
+        }
         if (!registrationsEnabled) {
           throw new Error("Novos cadastros estão temporariamente desativados.");
         }
-        await createUserWithEmailAndPassword(auth, email, password);
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        await setDoc(
+          doc(db, "users", credential.user.uid),
+          {
+            privacyAccepted: true,
+            privacyAcceptedAt: serverTimestamp(),
+            privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+          },
+          { merge: true }
+        );
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
@@ -249,7 +500,33 @@ function LoginScreen({
           />
         </label>
 
-        <button className="primary full" disabled={busy} onClick={handleEmail}>
+        {mode === "register" && (
+          <div className="privacy-register-box">
+            <label className="privacy-checkbox">
+              <input
+                type="checkbox"
+                checked={privacyChecked}
+                onChange={(e) => setPrivacyChecked(e.target.checked)}
+              />
+              <span>
+                Li e aceito a{" "}
+                <button
+                  type="button"
+                  className="privacy-link-button"
+                  onClick={() => setPrivacyOpen(true)}
+                >
+                  Política de Privacidade
+                </button>
+              </span>
+            </label>
+          </div>
+        )}
+
+        <button
+          className="primary full"
+          disabled={busy || (mode === "register" && !privacyChecked)}
+          onClick={handleEmail}
+        >
           {busy ? "Aguarde..." : mode === "register" ? "Criar minha conta" : "Entrar"}
         </button>
 
@@ -264,6 +541,27 @@ function LoginScreen({
 
         {showBetaMessage && (
           <p className="test-note">{betaMessage}</p>
+        )}
+
+        {privacyOpen && (
+          <div className="privacy-backdrop" onClick={() => setPrivacyOpen(false)}>
+            <section className="privacy-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="privacy-modal-header">
+                <strong>Política de Privacidade</strong>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => setPrivacyOpen(false)}
+                  aria-label="Fechar política"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="privacy-modal-scroll">
+                <PrivacyPolicyContent />
+              </div>
+            </section>
+          </div>
         )}
       </section>
     </main>
@@ -301,9 +599,14 @@ export default function App() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminSaving, setAdminSaving] = useState(false);
   const [chatLoading, setChatLoading] = useState(true);
+  const [privacyLoading, setPrivacyLoading] = useState(true);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [privacyAccepting, setPrivacyAccepting] = useState(false);
+  const [privacyAgreementChecked, setPrivacyAgreementChecked] = useState(false);
+  const [privacyViewOpen, setPrivacyViewOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; kind: "success" | "error" | "info" } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
-  const [settingsMessage, setSettingsMessage] = useState("");
   const [displayNameInput, setDisplayNameInput] = useState("");
   const [emailInput, setEmailInput] = useState("");
   const [feedbackType, setFeedbackType] = useState("Sugestão");
@@ -318,6 +621,13 @@ export default function App() {
     () => conversations.find((c) => c.id === activeId) || conversations[0],
     [conversations, activeId]
   );
+
+  function showToast(message: string, kind: "success" | "error" | "info" = "info") {
+    setToast({ message, kind });
+    window.setTimeout(() => {
+      setToast((current) => (current?.message === message ? null : current));
+    }, 4200);
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -353,29 +663,83 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (currentUser) => {
+    const unsub = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
 
-      if (currentUser) {
-        setDoc(
-          doc(db, "users", currentUser.uid),
+      if (!currentUser) {
+        setPrivacyAccepted(false);
+        setPrivacyLoading(false);
+        return;
+      }
+
+      setPrivacyLoading(true);
+
+      try {
+        const userRef = doc(db, "users", currentUser.uid);
+        const snap = await getDoc(userRef);
+        const data = snap.exists() ? snap.data() : {};
+
+        const accepted =
+          data?.privacyAccepted === true &&
+          data?.privacyPolicyVersion === PRIVACY_POLICY_VERSION;
+
+        setPrivacyAccepted(accepted);
+
+        await setDoc(
+          userRef,
           {
             uid: currentUser.uid,
             email: currentUser.email || "",
             displayName: currentUser.displayName || "",
             photoURL: currentUser.photoURL || "",
             lastSeenAt: serverTimestamp(),
+            lastActiveAt: serverTimestamp(),
           },
           { merge: true }
-        ).catch((error) => {
-          console.error("Não foi possível atualizar o perfil no Firestore:", error);
-        });
+        );
+      } catch (error) {
+        console.error("Não foi possível atualizar o perfil no Firestore:", error);
+        setPrivacyAccepted(false);
+      } finally {
+        setPrivacyLoading(false);
       }
     });
 
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let stopped = false;
+
+    const heartbeat = async () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          lastActiveAt: serverTimestamp(),
+          lastSeenAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch(() => {});
+    };
+
+    heartbeat();
+    const interval = window.setInterval(heartbeat, 45000);
+
+    const handleActivity = () => heartbeat();
+    window.addEventListener("focus", handleActivity);
+    document.addEventListener("visibilitychange", handleActivity);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleActivity);
+      document.removeEventListener("visibilitychange", handleActivity);
+    };
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -450,12 +814,11 @@ export default function App() {
     if (!user) return;
     const name = displayNameInput.trim();
     if (!name) {
-      setSettingsMessage("Digite um nome válido.");
+      showToast("Digite um nome válido.", "error");
       return;
     }
 
     setSettingsBusy(true);
-    setSettingsMessage("");
     try {
       await updateProfile(user, { displayName: name });
       await setDoc(
@@ -466,9 +829,9 @@ export default function App() {
         },
         { merge: true }
       );
-      setSettingsMessage("Nome atualizado.");
+      showToast("Nome atualizado.", "success");
     } catch (error: any) {
-      setSettingsMessage(error?.message || "Não foi possível atualizar o nome.");
+      showToast(error?.message || "Não foi possível atualizar o nome.", "error");
     } finally {
       setSettingsBusy(false);
     }
@@ -479,22 +842,23 @@ export default function App() {
     const nextEmail = emailInput.trim();
 
     if (!nextEmail || nextEmail === user.email) {
-      setSettingsMessage("Digite um e-mail diferente do atual.");
+      showToast("Digite um e-mail diferente do atual.", "error");
       return;
     }
 
     setSettingsBusy(true);
-    setSettingsMessage("");
     try {
       await verifyBeforeUpdateEmail(user, nextEmail);
-      setSettingsMessage(
-        "Enviamos um link de confirmação para o novo e-mail. Depois de confirmar, entre novamente se necessário."
+      showToast(
+        "Enviamos um link de confirmação para o novo e-mail. Depois de confirmar, entre novamente se necessário.",
+        "success"
       );
     } catch (error: any) {
-      setSettingsMessage(
+      showToast(
         error?.code === "auth/requires-recent-login"
           ? "Por segurança, saia da conta, entre novamente e tente alterar o e-mail."
-          : error?.message || "Não foi possível iniciar a alteração do e-mail."
+          : error?.message || "Não foi possível iniciar a alteração do e-mail.",
+        "error"
       );
     } finally {
       setSettingsBusy(false);
@@ -505,12 +869,11 @@ export default function App() {
     if (!user?.email) return;
 
     setSettingsBusy(true);
-    setSettingsMessage("");
     try {
       await sendPasswordResetEmail(auth, user.email);
-      setSettingsMessage("Enviamos um e-mail para redefinir sua senha.");
+      showToast("Enviamos um e-mail para redefinir sua senha.", "success");
     } catch (error: any) {
-      setSettingsMessage(error?.message || "Não foi possível enviar o e-mail de redefinição.");
+      showToast(error?.message || "Não foi possível enviar o e-mail de redefinição.", "error");
     } finally {
       setSettingsBusy(false);
     }
@@ -525,7 +888,6 @@ export default function App() {
     if (!confirmed) return;
 
     setSettingsBusy(true);
-    setSettingsMessage("");
     try {
       const snap = await getDocs(
         collection(db, "users", user.uid, "conversations")
@@ -541,9 +903,9 @@ export default function App() {
       setConversations([fresh]);
       setActiveId(fresh.id);
       await persistConversation(fresh);
-      setSettingsMessage("Histórico apagado.");
+      showToast("Histórico apagado.", "success");
     } catch (error: any) {
-      setSettingsMessage(error?.message || "Não foi possível apagar o histórico.");
+      showToast(error?.message || "Não foi possível apagar o histórico.", "error");
     } finally {
       setSettingsBusy(false);
     }
@@ -554,12 +916,11 @@ export default function App() {
     const message = feedbackText.trim();
 
     if (!message) {
-      setSettingsMessage("Escreva seu feedback antes de enviar.");
+      showToast("Escreva seu feedback antes de enviar.", "error");
       return;
     }
 
     setSettingsBusy(true);
-    setSettingsMessage("");
     try {
       await addDoc(collection(db, "feedback"), {
         uid: user.uid,
@@ -572,9 +933,9 @@ export default function App() {
       });
 
       setFeedbackText("");
-      setSettingsMessage("Feedback enviado. Obrigado!");
+      showToast("Feedback enviado. Obrigado!", "success");
     } catch (error: any) {
-      setSettingsMessage(error?.message || "Não foi possível enviar o feedback.");
+      showToast(error?.message || "Não foi possível enviar o feedback.", "error");
     } finally {
       setSettingsBusy(false);
     }
@@ -589,7 +950,6 @@ export default function App() {
     if (!confirmed) return;
 
     setSettingsBusy(true);
-    setSettingsMessage("");
 
     try {
       const snap = await getDocs(
@@ -605,13 +965,38 @@ export default function App() {
       await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
       await deleteUser(user);
     } catch (error: any) {
-      setSettingsMessage(
+      showToast(
         error?.code === "auth/requires-recent-login"
           ? "Por segurança, saia da conta, entre novamente e tente excluir a conta."
-          : error?.message || "Não foi possível excluir sua conta."
+          : error?.message || "Não foi possível excluir sua conta.",
+        "error"
       );
     } finally {
       setSettingsBusy(false);
+    }
+  }
+
+  async function acceptPrivacyPolicy() {
+    if (!user || !privacyAgreementChecked) return;
+
+    setPrivacyAccepting(true);
+    try {
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          privacyAccepted: true,
+          privacyAcceptedAt: serverTimestamp(),
+          privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+          lastActiveAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setPrivacyAccepted(true);
+      showToast("Política de Privacidade aceita.", "success");
+    } catch (error: any) {
+      showToast(error?.message || "Não foi possível registrar o aceite.", "error");
+    } finally {
+      setPrivacyAccepting(false);
     }
   }
 
@@ -1056,7 +1441,7 @@ export default function App() {
     }
   }
 
-  if (authLoading) {
+  if (authLoading || (user && privacyLoading)) {
     return <div className="loading-screen"><TulipLogo /><p>Carregando Tulipa IA...</p></div>;
   }
 
@@ -1069,6 +1454,65 @@ export default function App() {
           loginSubtitle={publicConfig.loginSubtitle}
           registrationsEnabled={publicConfig.registrationsEnabled}
         />
+        <Analytics />
+      </>
+    );
+  }
+
+  if (user && !privacyAccepted) {
+    return (
+      <>
+        <div className="privacy-gate-shell">
+          <section className="privacy-gate-card">
+            <div className="privacy-gate-header">
+              <img
+                src="/brand/tulipa-symbol.png"
+                alt="Tulipa.ia"
+                className="privacy-gate-logo"
+              />
+              <div>
+                <h1>Política de Privacidade</h1>
+                <p>Para continuar usando a Tulipa IA, leia e aceite a versão atual.</p>
+              </div>
+            </div>
+
+            <div className="privacy-gate-scroll">
+              <PrivacyPolicyContent />
+            </div>
+
+            <label className="privacy-checkbox privacy-gate-check">
+              <input
+                type="checkbox"
+                checked={privacyAgreementChecked}
+                onChange={(e) => setPrivacyAgreementChecked(e.target.checked)}
+              />
+              <span>Li e aceito a Política de Privacidade da Tulipa IA.</span>
+            </label>
+
+            <div className="privacy-gate-actions">
+              <button
+                className="privacy-logout"
+                onClick={() => signOut(auth)}
+                disabled={privacyAccepting}
+              >
+                Sair da conta
+              </button>
+              <button
+                className="primary"
+                onClick={acceptPrivacyPolicy}
+                disabled={!privacyAgreementChecked || privacyAccepting}
+              >
+                {privacyAccepting ? "Registrando..." : "Aceitar e continuar"}
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {toast && (
+          <div className={`app-toast ${toast.kind}`}>
+            {toast.message}
+          </div>
+        )}
         <Analytics />
       </>
     );
@@ -1366,6 +1810,15 @@ export default function App() {
                   <div>
                     <strong>{item.displayName || "Sem nome"}</strong>
                     <span>{item.email || "Sem e-mail"}</span>
+                  </div>
+                  <div className="admin-user-presence">
+                    <span className={item.online ? "presence-dot online" : "presence-dot"} />
+                    <strong>{item.online ? "Online agora" : "Offline"}</strong>
+                    <small>
+                      {item.lastSeenAt
+                        ? `Último acesso: ${new Date(item.lastSeenAt).toLocaleString("pt-BR")}`
+                        : "Último acesso indisponível"}
+                    </small>
                   </div>
                   <small>{item.disabled ? "Bloqueado" : "Ativo"}</small>
                   <button
@@ -1723,6 +2176,19 @@ export default function App() {
                 </button>
               </section>
 
+              <section className="settings-section">
+                <h3>Política de Privacidade</h3>
+                <p>
+                  Consulte a política aceita pela sua conta e as informações sobre tratamento de dados.
+                </p>
+                <button
+                  className="settings-secondary-button"
+                  onClick={() => setPrivacyViewOpen(true)}
+                >
+                  Ler Política de Privacidade
+                </button>
+              </section>
+
               <section className="settings-section settings-danger-zone">
                 <h3>Zona de perigo</h3>
                 <p>
@@ -1736,12 +2202,38 @@ export default function App() {
                   Excluir minha conta
                 </button>
               </section>
-
-              {settingsMessage && (
-                <div className="settings-message">{settingsMessage}</div>
-              )}
             </div>
           </section>
+        </div>
+      )}
+
+      {privacyViewOpen && (
+        <div className="privacy-backdrop" onClick={() => setPrivacyViewOpen(false)}>
+          <section className="privacy-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="privacy-modal-header">
+              <div>
+                <strong>Política de Privacidade</strong>
+                <span>Versão {PRIVACY_POLICY_VERSION}</span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setPrivacyViewOpen(false)}
+                aria-label="Fechar política"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="privacy-modal-scroll">
+              <PrivacyPolicyContent />
+            </div>
+          </section>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`app-toast ${toast.kind}`} role="status">
+          {toast.message}
         </div>
       )}
 
