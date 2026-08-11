@@ -50,6 +50,27 @@ import { auth, db, googleProvider } from "./firebase";
 
 type Role = "user" | "assistant";
 
+type ResponseStyle =
+  | "objetiva"
+  | "didatica"
+  | "criativa"
+  | "formal"
+  | "casual"
+  | "detalhada";
+
+const RESPONSE_STYLE_OPTIONS: Array<{
+  value: ResponseStyle;
+  label: string;
+  description: string;
+}> = [
+  { value: "objetiva", label: "Objetiva", description: "Respostas curtas e diretas." },
+  { value: "didatica", label: "Didática", description: "Explica com clareza e passo a passo." },
+  { value: "criativa", label: "Criativa", description: "Mais ideias, exemplos e possibilidades." },
+  { value: "formal", label: "Formal", description: "Linguagem profissional e organizada." },
+  { value: "casual", label: "Casual", description: "Tom leve, natural e conversacional." },
+  { value: "detalhada", label: "Detalhada", description: "Respostas mais completas e aprofundadas." },
+];
+
 type Message = {
   id: string;
   role: Role;
@@ -652,6 +673,8 @@ export default function App() {
   const [emailInput, setEmailInput] = useState("");
   const [feedbackType, setFeedbackType] = useState("Sugestão");
   const [feedbackText, setFeedbackText] = useState("");
+  const [responseStyle, setResponseStyle] = useState<ResponseStyle>("didatica");
+  const [responseStyleSaving, setResponseStyleSaving] = useState(false);
   const [listening, setListening] = useState(false);
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -720,6 +743,13 @@ export default function App() {
         const userRef = doc(db, "users", currentUser.uid);
         const snap = await getDoc(userRef);
         const data = snap.exists() ? snap.data() : {};
+
+        const savedStyle = String(data?.responseStyle || "");
+        if (["objetiva", "didatica", "criativa", "formal", "casual", "detalhada"].includes(savedStyle)) {
+          setResponseStyle(savedStyle as ResponseStyle);
+        } else {
+          setResponseStyle("didatica");
+        }
 
         const acceptedVersion =
           typeof data?.privacyPolicyVersion === "string"
@@ -959,6 +989,20 @@ export default function App() {
       showToast(error?.message || "Não foi possível apagar o histórico.", "error");
     } finally {
       setSettingsBusy(false);
+    }
+  }
+
+  async function saveResponseStyle(nextStyle: ResponseStyle) {
+    if (!user) return;
+    setResponseStyle(nextStyle);
+    setResponseStyleSaving(true);
+    try {
+      await setDoc(doc(db, "users", user.uid), { responseStyle: nextStyle, updatedAt: serverTimestamp() }, { merge: true });
+      showToast(`Estilo ${RESPONSE_STYLE_OPTIONS.find((item) => item.value === nextStyle)?.label || nextStyle} ativado.`, "success");
+    } catch (error: any) {
+      showToast(error?.message || "Não foi possível salvar o estilo das respostas.", "error");
+    } finally {
+      setResponseStyleSaving(false);
     }
   }
 
@@ -1407,6 +1451,7 @@ export default function App() {
                 data: currentAttachment.data,
               }
             : null,
+          responseStyle,
         }),
       });
 
@@ -2232,6 +2277,25 @@ export default function App() {
               </section>
 
               <section className="settings-section">
+                <h3>Estilo das respostas</h3>
+                <p>Escolha como você prefere que a Tulipa IA escreva as respostas. Essa preferência fica salva na sua conta.</p>
+                <div className="response-style-grid">
+                  {RESPONSE_STYLE_OPTIONS.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`response-style-card ${responseStyle === option.value ? "active" : ""}`}
+                      onClick={() => saveResponseStyle(option.value)}
+                      disabled={responseStyleSaving}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="settings-section">
                 <h3>Política de Privacidade</h3>
                 <p>
                   Consulte a política aceita pela sua conta e as informações sobre tratamento de dados.
@@ -2306,6 +2370,21 @@ export default function App() {
             <strong>{active?.title || "Tulipa IA"}</strong>
             <span>{publicConfig.assistantSubtitle}</span>
           </div>
+
+          <label className="topbar-style-selector" title="Estilo das respostas">
+            <span>Estilo</span>
+            <select
+              value={responseStyle}
+              onChange={(e) => saveResponseStyle(e.target.value as ResponseStyle)}
+              disabled={responseStyleSaving}
+            >
+              {RESPONSE_STYLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {publicConfig.showDailyCounter && (
             <div className="usage-pill" title="Limite diário de uso">
