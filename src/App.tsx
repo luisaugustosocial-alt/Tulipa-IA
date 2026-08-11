@@ -1,1512 +1,2428 @@
-:root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #2c1833;
-  background: #f7eff8;
-  font-synthesis: none;
-  --bg: #f7eff8;
-  --panel: rgba(255, 255, 255, 0.86);
-  --panel-strong: #ffffff;
-  --text: #2c1833;
-  --muted: #806b86;
-  --line: rgba(91, 41, 101, 0.13);
-  --brand: #6d2b7c;
-  --brand-2: #9a4ca8;
-  --brand-soft: #f0dff3;
-  --shadow: 0 18px 55px rgba(74, 24, 84, 0.10);
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Analytics } from "@vercel/analytics/react";
+import {
+  Bot,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
+  LogOut,
+  Menu,
+  Mic,
+  Moon,
+  Plus,
+  Send,
+  Settings,
+  ShieldCheck,
+  Save,
+  RefreshCw,
+  Users,
+  BarChart3,
+  Sun,
+  Trash2,
+  UserRound,
+  X,
+} from "lucide-react";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+  verifyBeforeUpdateEmail,
+  sendPasswordResetEmail,
+  deleteUser,
+  type User,
+} from "firebase/auth";
+import {
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
+import { auth, db, googleProvider } from "./firebase";
+
+type Role = "user" | "assistant";
+
+type Message = {
+  id: string;
+  role: Role;
+  text: string;
+  createdAt: number;
+  attachment?: {
+    name: string;
+    mimeType: string;
+    kind: "pdf" | "image";
+  };
+};
+
+type PendingAttachment = {
+  name: string;
+  mimeType: string;
+  data: string;
+  kind: "pdf" | "image";
+};
+
+type Conversation = {
+  id: string;
+  title: string;
+  messages: Message[];
+  updatedAt: number;
+};
+
+type PublicConfig = {
+  dailyLimit: number;
+  betaMessage: string;
+  assistantSubtitle: string;
+  maintenanceMode: boolean;
+  maintenanceMessage: string;
+  showBetaMessage: boolean;
+  showDailyCounter: boolean;
+  welcomeMessage: string;
+  loginSubtitle: string;
+  registrationsEnabled: boolean;
+};
+
+type AdminUser = {
+  uid: string;
+  email: string;
+  displayName: string;
+  disabled: boolean;
+  lastSeenAt: string;
+  lastActiveAt: string;
+  online: boolean;
+  privacyAccepted: boolean;
+  privacyPolicyVersion: string;
+};
+
+type AdminFeedback = {
+  id: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  type: string;
+  message: string;
+  status: string;
+  createdAt: string;
+};
+
+type AdminDashboardData = {
+  config: PublicConfig;
+  stats: {
+    users: number;
+    conversations: number;
+    messagesToday: number;
+  };
+  users: AdminUser[];
+  feedbacks: AdminFeedback[];
+};
+
+const DEFAULT_DAILY_LIMIT = 20;
+
+const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
+  dailyLimit: DEFAULT_DAILY_LIMIT,
+  betaMessage: "🧪 Beta: mensagens diárias são limitadas para manter o teste estável.",
+  assistantSubtitle: "Assistente geral em fase de testes",
+  maintenanceMode: false,
+  maintenanceMessage: "🌷 A Tulipa IA está em manutenção. Volte em alguns instantes.",
+  showBetaMessage: true,
+  showDailyCounter: true,
+  welcomeMessage: "Oi! Eu sou a Tulipa IA 🌷. Posso ajudar com estudos, textos, ideias, organização, explicações e dúvidas simples do dia a dia. O que vamos fazer?",
+  loginSubtitle: "Uma assistente para estudar, organizar ideias, escrever e resolver dúvidas simples do dia a dia.",
+  registrationsEnabled: true,
+};
+
+function makeId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-:root[data-theme="dark"] {
-  --bg: #120b16;
-  --panel: rgba(29, 17, 34, 0.90);
-  --panel-strong: #211327;
-  --text: #f6eaf8;
-  --muted: #bba8bf;
-  --line: rgba(225, 190, 231, 0.12);
-  --brand: #b96fc6;
-  --brand-2: #8c4a9a;
-  --brand-soft: #321b39;
-  --shadow: 0 18px 55px rgba(0, 0, 0, 0.28);
-}
-
-* { box-sizing: border-box; }
-html, body, #root { margin: 0; min-height: 100%; }
-button, input, textarea { font: inherit; }
-button { color: inherit; }
-body { background: var(--bg); color: var(--text); }
-button:focus-visible, input:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-.auth-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 28px;
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(154,76,168,.22), transparent 36%),
-    linear-gradient(145deg, #29102f, #4b1f56 48%, #211028);
-}
-
-.auth-glow {
-  position: absolute;
-  width: 420px;
-  height: 420px;
-  border-radius: 50%;
-  filter: blur(70px);
-  opacity: .25;
-}
-.auth-glow-a { background: #cb82d6; top: -170px; left: -100px; }
-.auth-glow-b { background: #7b2f8b; bottom: -180px; right: -80px; }
-
-.auth-card {
-  width: min(440px, 100%);
-  background: rgba(255,255,255,.94);
-  border: 1px solid rgba(255,255,255,.36);
-  border-radius: 28px;
-  padding: 32px;
-  box-shadow: 0 28px 90px rgba(0,0,0,.27);
-  position: relative;
-  z-index: 2;
-  color: #2e1733;
-  backdrop-filter: blur(22px);
-}
-.auth-card h1 { margin: 8px 0 6px; text-align: center; font-size: 2rem; }
-.auth-subtitle { text-align: center; color: #715a77; line-height: 1.55; margin: 0 0 22px; }
-.brand-mark { width: 68px; height: 68px; border-radius: 22px; display: grid; place-items: center; font-size: 34px; background: linear-gradient(145deg,#f4e4f6,#dac1df); margin: 0 auto; box-shadow: inset 0 1px 0 white; }
-.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; background: #f2e8f4; border-radius: 14px; padding: 4px; margin-bottom: 18px; }
-.auth-tabs button { border: 0; background: transparent; padding: 10px; border-radius: 10px; cursor: pointer; font-weight: 700; color: #765b7d; }
-.auth-tabs button.active { background: white; color: #5f216d; box-shadow: 0 3px 12px rgba(83,30,94,.08); }
-.auth-card label { display: grid; gap: 7px; font-weight: 700; font-size: .88rem; margin-bottom: 13px; }
-.auth-card input { width: 100%; padding: 13px 14px; border-radius: 13px; border: 1px solid #dfcfdf; background: white; }
-.full { width: 100%; }
-.primary { border: 0; border-radius: 13px; padding: 13px 16px; background: linear-gradient(135deg,#662675,#8e419d); color: white; font-weight: 800; cursor: pointer; }
-.google { border: 1px solid #d9ccd9; border-radius: 13px; padding: 12px 16px; background: white; font-weight: 750; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px; }
-.google-g { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: #4285f4; font-weight: 900; }
-.separator { display: flex; align-items: center; gap: 12px; color: #9a879d; margin: 15px 0; }
-.separator::before, .separator::after { content: ""; flex: 1; height: 1px; background: #e7dce7; }
-.test-note { background: #f7eff8; border: 1px solid #eadbed; padding: 11px 12px; border-radius: 12px; color: #765b7d; font-size: .8rem; line-height: 1.45; margin: 16px 0 0; }
-.error-text { color: #b42318; font-size: .82rem; margin: 12px 0 0; word-break: break-word; }
-
-.loading-screen {
-  min-height: 100vh;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 12px;
-  background: var(--bg);
-  color: var(--muted);
-}
-.tulip-logo { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(145deg,var(--brand-soft),rgba(255,255,255,.35)); font-size: 23px; flex: 0 0 auto; }
-
-.app-shell { min-height: 100vh; display: flex; background: var(--bg); }
-.sidebar {
-  width: 270px;
-  min-height: 100vh;
-  border-right: 1px solid var(--line);
-  background: var(--panel);
-  backdrop-filter: blur(18px);
-  display: flex;
-  flex-direction: column;
-  padding: 15px;
-  transition: width .22s ease;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-}
-.sidebar.closed { width: 76px; }
-.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 4px 4px 14px; }
-.sidebar-brand strong { display: block; font-size: 1rem; }
-.sidebar-brand span { display: inline-block; font-size: .66rem; font-weight: 800; color: var(--brand); background: var(--brand-soft); padding: 2px 7px; border-radius: 99px; margin-top: 2px; }
-.new-chat { border: 0; background: linear-gradient(135deg,#4f1f5b,#72317f); color: white; border-radius: 13px; padding: 11px 12px; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 800; cursor: pointer; min-height: 42px; }
-.conversation-list { overflow: auto; flex: 1; padding-top: 14px; }
-.section-label { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; padding: 0 8px; }
-.conversation-row { display: flex; align-items: center; border-radius: 11px; margin-bottom: 5px; }
-.conversation-row.active { background: var(--brand-soft); }
-.conversation-row > button:first-child { border: 0; background: transparent; flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer; text-align: left; }
-.conversation-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .82rem; font-weight: 650; }
-.delete-chat { border: 0; background: transparent; cursor: pointer; opacity: .55; padding: 8px; }
-.delete-chat:hover { opacity: 1; color: #c63d4f; }
-.sidebar-bottom { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
-.sidebar-bottom > button { border: 0; background: transparent; border-radius: 10px; padding: 9px; display: flex; align-items: center; gap: 9px; cursor: pointer; text-align: left; }
-.sidebar-bottom > button:hover { background: var(--brand-soft); }
-.profile-mini { display: flex; align-items: center; gap: 9px; padding: 5px; margin-bottom: 4px; min-width: 0; }
-.profile-mini img, .avatar-fallback { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; background: var(--brand-soft); display: grid; place-items: center; flex: 0 0 auto; }
-.profile-mini div:last-child { min-width: 0; }
-.profile-mini strong, .profile-mini span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.profile-mini strong { font-size: .78rem; }
-.profile-mini span { font-size: .66rem; color: var(--muted); margin-top: 2px; }
-
-.chat-area { flex: 1; min-width: 0; min-height: 100vh; display: flex; flex-direction: column; }
-.topbar { height: 70px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; padding: 0 22px; background: color-mix(in srgb, var(--bg) 80%, transparent); backdrop-filter: blur(16px); position: sticky; top: 0; z-index: 4; }
-.icon-button { width: 38px; height: 38px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel); display: grid; place-items: center; cursor: pointer; }
-.topbar-title { min-width: 0; flex: 1; }
-.topbar-title strong, .topbar-title span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.topbar-title strong { font-size: .95rem; }
-.topbar-title span { color: var(--muted); font-size: .72rem; margin-top: 2px; }
-.usage-pill { border: 1px solid var(--line); background: var(--panel); padding: 7px 11px; border-radius: 999px; font-size: .76rem; font-weight: 800; color: var(--brand); }
-
-.messages { flex: 1; width: min(860px, calc(100% - 30px)); margin: 0 auto; padding: 28px 0 190px; }
-.message { display: flex; gap: 10px; margin-bottom: 22px; }
-.message.user { justify-content: flex-end; }
-.message-avatar { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; background: var(--brand-soft); flex: 0 0 auto; }
-.message > div:last-child { max-width: min(78%, 680px); }
-.message.user > div:last-child { display: flex; flex-direction: column; align-items: flex-end; }
-.bubble { white-space: pre-wrap; line-height: 1.62; font-size: .91rem; padding: 12px 15px; border-radius: 17px; background: var(--panel-strong); border: 1px solid var(--line); box-shadow: 0 6px 22px rgba(42,13,49,.04); }
-.message.user .bubble { color: white; background: linear-gradient(135deg,#592167,#743181); border: 0; border-bottom-right-radius: 5px; }
-.message.assistant .bubble { border-bottom-left-radius: 5px; }
-.message time { display: block; color: var(--muted); font-size: .65rem; margin-top: 4px; padding: 0 4px; }
-.typing-bubble { display: flex; gap: 4px; padding: 13px 16px; background: var(--panel-strong); border: 1px solid var(--line); border-radius: 16px; }
-.typing-bubble span { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); animation: bounce 1s infinite ease-in-out; }
-.typing-bubble span:nth-child(2) { animation-delay: .14s; }
-.typing-bubble span:nth-child(3) { animation-delay: .28s; }
-@keyframes bounce { 0%, 70%, 100% { transform: translateY(0); opacity: .45; } 35% { transform: translateY(-5px); opacity: 1; } }
-
-.composer-wrap { position: fixed; bottom: 0; left: 270px; right: 0; padding: 0 18px 16px; background: linear-gradient(transparent, var(--bg) 25%); transition: left .22s ease; }
-.sidebar.closed ~ .chat-area .composer-wrap { left: 76px; }
-.beta-banner { width: min(860px, 100%); margin: 0 auto 8px; color: var(--muted); font-size: .7rem; text-align: center; }
-.composer { width: min(860px, 100%); margin: 0 auto; border: 1px solid var(--line); border-radius: 19px; background: var(--panel-strong); box-shadow: var(--shadow); padding: 9px 9px 9px 14px; display: flex; align-items: flex-end; gap: 8px; }
-.composer textarea { flex: 1; resize: none; max-height: 150px; min-height: 42px; border: 0; outline: 0; background: transparent; color: var(--text); line-height: 1.5; padding: 10px 5px; }
-.send-button { width: 42px; height: 42px; border: 0; border-radius: 13px; background: linear-gradient(135deg,#54205f,#773484); color: white; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
-.send-button:disabled { opacity: .38; cursor: not-allowed; }
-.privacy-hint { text-align: center; color: var(--muted); font-size: .65rem; margin: 7px auto 0; }
-
-@media (max-width: 760px) {
-  .sidebar { position: fixed; z-index: 10; width: min(300px, 88vw); transform: translateX(0); box-shadow: 14px 0 50px rgba(0,0,0,.18); }
-  .sidebar.closed { width: min(300px, 88vw); transform: translateX(-105%); }
-  .composer-wrap, .sidebar.closed ~ .chat-area .composer-wrap { left: 0; }
-  .topbar { padding: 0 13px; }
-  .usage-pill { font-size: .68rem; padding: 6px 9px; }
-  .messages { width: min(100% - 20px, 860px); padding-top: 18px; }
-  .message > div:last-child { max-width: 88%; }
-  .auth-card { padding: 25px 20px; }
+function formatTime(ts: number) {
+  return new Date(ts).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 
-.mobile-sidebar-backdrop {
-  display: none;
+const PRIVACY_POLICY_VERSION = "1.0";
+
+function PrivacyPolicyContent() {
+  return (
+    <div className="privacy-policy-text">
+      <h2>Política de Privacidade da Tulipa IA</h2>
+      <p className="privacy-version">Versão {PRIVACY_POLICY_VERSION}</p>
+
+      <div className="privacy-summary-card">
+        <strong>Resumo importante</strong>
+        <p>
+          A Tulipa IA utiliza dados necessários para manter sua conta, histórico e
+          funcionalidades. O administrador pode acessar dados administrativos e
+          conversas quando necessário para suporte, segurança e funcionamento da
+          plataforma, mas não possui acesso à sua senha.
+        </p>
+      </div>
+
+      <h3>1. Apresentação</h3>
+      <p>
+        Esta Política de Privacidade explica como a Tulipa IA coleta, utiliza,
+        armazena, protege e trata informações relacionadas aos usuários durante
+        a utilização da plataforma. Ao criar uma conta e utilizar a Tulipa IA,
+        o usuário declara ter lido e compreendido esta Política.
+      </p>
+
+      <h3>2. Dados coletados</h3>
+      <p>
+        Para possibilitar o funcionamento da conta e dos serviços oferecidos,
+        poderão ser tratados dados como nome de usuário, endereço de e-mail,
+        identificador interno da conta, fotografia de perfil quando fornecida
+        por serviço de autenticação, registros de acesso e utilização, data e
+        horário do último acesso, informações técnicas necessárias ao
+        funcionamento do sistema, feedbacks enviados pelo usuário e conteúdo
+        das conversas realizadas com a Tulipa IA.
+      </p>
+
+      <h3>3. Dados de autenticação e senha</h3>
+      <p>
+        O administrador da Tulipa IA não possui acesso à senha utilizada pelo
+        usuário. As credenciais de autenticação são processadas pelos serviços
+        responsáveis pela autenticação da conta.
+      </p>
+      <p>
+        O administrador poderá ter acesso aos dados necessários para
+        identificação e gerenciamento da conta, incluindo principalmente o
+        endereço de e-mail utilizado para login, identificador da conta, nome
+        cadastrado, situação da conta e demais metadados administrativos.
+      </p>
+      <p>
+        Esse acesso poderá ser utilizado quando necessário para prestar suporte
+        ao usuário, identificar problemas de acesso, bloquear ou desativar
+        contas, excluir contas, auxiliar em procedimentos de recuperação de
+        acesso ou redefinição de senha e executar outras medidas administrativas
+        necessárias ao funcionamento e à segurança da plataforma.
+      </p>
+      <p>
+        A redefinição de senha não significa que o administrador terá
+        conhecimento da senha anterior ou da nova senha escolhida pelo usuário.
+      </p>
+
+      <h3>4. Conversas realizadas na Tulipa IA</h3>
+      <p>
+        As conversas poderão ser armazenadas vinculadas à conta do usuário para
+        possibilitar histórico, continuidade das conversas, funcionamento
+        adequado da plataforma, suporte técnico e demais funcionalidades
+        disponibilizadas.
+      </p>
+      <p>
+        O usuário deve estar ciente de que o administrador autorizado da Tulipa
+        IA poderá acessar o conteúdo das conversas quando isso for necessário
+        para administração do serviço, suporte técnico, investigação de falhas,
+        prevenção de abuso, segurança da plataforma, análise de denúncias,
+        cumprimento de obrigações legais ou melhoria do funcionamento do
+        serviço.
+      </p>
+      <p>
+        Esse acesso administrativo não autoriza o uso indiscriminado das
+        conversas para finalidades incompatíveis com a operação da Tulipa IA.
+      </p>
+
+      <h3>5. Finalidades do tratamento dos dados</h3>
+      <p>
+        Os dados poderão ser utilizados para criar e administrar contas;
+        autenticar usuários; manter o histórico das conversas; fornecer
+        respostas e funcionalidades da Tulipa IA; oferecer suporte; recuperar
+        ou administrar contas; detectar erros e abusos; proteger a segurança do
+        serviço; realizar manutenção; analisar feedbacks; melhorar
+        funcionalidades; cumprir obrigações legais; e exercer direitos
+        legítimos relacionados à operação e proteção da plataforma.
+      </p>
+
+      <h3>6. Serviços de terceiros</h3>
+      <p>
+        Para funcionar, a Tulipa IA poderá utilizar serviços tecnológicos de
+        terceiros, incluindo serviços de hospedagem, autenticação, banco de
+        dados, inteligência artificial, análise de funcionamento e
+        infraestrutura.
+      </p>
+      <p>
+        Determinadas informações poderão ser processadas por esses serviços na
+        medida necessária à execução das funcionalidades solicitadas pelo
+        usuário. O tratamento realizado por terceiros também poderá estar
+        sujeito às políticas e condições dos respectivos fornecedores.
+      </p>
+
+      <h3>7. Segurança das informações</h3>
+      <p>
+        A Tulipa IA busca adotar medidas técnicas e administrativas destinadas
+        a proteger os dados contra acessos não autorizados, alteração, perda,
+        destruição ou divulgação indevida.
+      </p>
+      <p>
+        Entretanto, nenhum sistema conectado à internet é totalmente imune a
+        falhas, ataques cibernéticos, invasões, vulnerabilidades ou incidentes
+        de segurança. Por esse motivo, a Tulipa IA não garante proteção absoluta
+        contra ações ilícitas praticadas por terceiros.
+      </p>
+      <p>
+        Caso seja identificado incidente relevante que possa envolver dados
+        pessoais, poderão ser adotadas as medidas técnicas, administrativas e
+        legais consideradas necessárias.
+      </p>
+
+      <h3>8. Responsabilidade do usuário</h3>
+      <p>
+        O usuário é responsável pela guarda e confidencialidade de suas
+        credenciais de acesso, pela utilização de senhas seguras e por evitar
+        compartilhar informações de acesso com terceiros.
+      </p>
+      <p>
+        O usuário também deve evitar inserir nas conversas informações
+        extremamente sensíveis ou dados pessoais de terceiros que não sejam
+        necessários para a utilização do serviço.
+      </p>
+
+      <h3>9. Histórico e exclusão de conversas</h3>
+      <p>
+        O usuário poderá utilizar as ferramentas disponibilizadas na plataforma
+        para apagar o histórico de conversas associado à sua conta.
+      </p>
+      <p>
+        A exclusão poderá remover os registros disponíveis ao usuário nos
+        sistemas ativos da plataforma, observadas eventuais necessidades
+        técnicas, legais, de segurança ou de preservação temporária de
+        registros.
+      </p>
+
+      <h3>10. Alteração de dados da conta</h3>
+      <p>
+        O usuário poderá solicitar ou realizar, conforme as funcionalidades
+        disponíveis, alteração de nome, alteração ou verificação de endereço de
+        e-mail, redefinição de senha e outras atualizações relacionadas à conta.
+      </p>
+      <p>
+        Algumas alterações poderão exigir nova autenticação ou confirmação de
+        identidade por razões de segurança.
+      </p>
+
+      <h3>11. Exclusão ou desativação da conta</h3>
+      <p>
+        O usuário poderá solicitar ou executar a exclusão da própria conta pelas
+        ferramentas disponibilizadas.
+      </p>
+      <p>
+        O administrador também poderá desativar, bloquear ou excluir contas
+        quando houver solicitação do titular, necessidade técnica, risco à
+        segurança, utilização abusiva, violação das regras do serviço,
+        determinação legal ou outra justificativa legítima relacionada ao
+        funcionamento da plataforma.
+      </p>
+
+      <h3>12. Feedbacks</h3>
+      <p>
+        Sugestões, elogios, críticas ou relatos de problemas enviados pelo
+        usuário poderão ser armazenados para análise administrativa e melhoria
+        da Tulipa IA.
+      </p>
+      <p>
+        O feedback poderá ficar associado ao nome, e-mail e identificador da
+        conta do usuário para possibilitar acompanhamento e resposta quando
+        necessário.
+      </p>
+
+      <h3>13. Direitos do usuário</h3>
+      <p>
+        Nos termos da legislação aplicável, o usuário poderá exercer direitos
+        relacionados aos seus dados pessoais, inclusive solicitar confirmação
+        da existência de tratamento, acesso, correção de informações inexatas e,
+        quando aplicável, eliminação ou outras providências previstas na
+        legislação.
+      </p>
+
+      <h3>14. Registros de utilização</h3>
+      <p>
+        A plataforma poderá registrar informações como último acesso,
+        utilização recente e estado de atividade da conta para fins de
+        funcionamento, segurança, administração e suporte.
+      </p>
+      <p>
+        A indicação de que um usuário está “online” poderá ser baseada em
+        registros técnicos recentes de atividade e não necessariamente
+        representar, com precisão absoluta, que a pessoa esteja olhando para a
+        plataforma naquele exato segundo.
+      </p>
+
+      <h3>15. Menores de idade</h3>
+      <p>
+        Caso a Tulipa IA seja disponibilizada para menores de idade, poderão ser
+        aplicadas medidas adicionais de proteção, consentimento ou verificação
+        conforme a legislação aplicável.
+      </p>
+
+      <h3>16. Alterações desta Política</h3>
+      <p>
+        Esta Política poderá ser atualizada sempre que houver mudanças
+        relevantes nas funcionalidades, na legislação, nos serviços utilizados
+        ou nas práticas de tratamento de dados.
+      </p>
+      <p>
+        Quando houver alteração relevante, a plataforma poderá solicitar
+        novamente a manifestação de ciência ou aceite do usuário.
+      </p>
+
+      <h3>17. Aceite</h3>
+      <p>
+        Ao marcar a opção “Li e aceito a Política de Privacidade”, o usuário
+        declara ter tido acesso ao conteúdo desta Política e concorda com o
+        tratamento de seus dados nos termos aqui descritos, sem prejuízo dos
+        direitos assegurados pela legislação aplicável.
+      </p>
+      <p>
+        O registro do aceite poderá conter data, horário, identificação da conta
+        e versão da Política aceita para fins de comprovação e administração do
+        serviço.
+      </p>
+    </div>
+  );
 }
 
-@media (max-width: 760px) {
-  .mobile-sidebar-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 9;
-    border: 0;
-    margin: 0;
-    padding: 0;
-    background: rgba(8, 3, 10, 0.48);
-    backdrop-filter: blur(2px);
+function LoginScreen({
+  betaMessage,
+  showBetaMessage,
+  loginSubtitle,
+  registrationsEnabled,
+}: {
+  betaMessage: string;
+  showBetaMessage: boolean;
+  loginSubtitle: string;
+  registrationsEnabled: boolean;
+}) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [privacyChecked, setPrivacyChecked] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+
+  async function handleEmail() {
+    setBusy(true);
+    setError("");
+    try {
+      if (mode === "register") {
+        if (!privacyChecked) {
+          throw new Error("Você precisa aceitar a Política de Privacidade para criar a conta.");
+        }
+        if (!registrationsEnabled) {
+          throw new Error("Novos cadastros estão temporariamente desativados.");
+        }
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        await setDoc(
+          doc(db, "users", credential.user.uid),
+          {
+            privacyAccepted: true,
+            privacyAcceptedAt: serverTimestamp(),
+            privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+          },
+          { merge: true }
+        );
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Não foi possível entrar.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  .sidebar {
-    width: min(300px, 86vw);
-    transform: translateX(0);
+  async function handleGoogle() {
+    setBusy(true);
+    setError("");
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      setError(err?.message || "Não foi possível entrar com o Google.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  .sidebar.closed {
-    width: min(300px, 86vw);
-    transform: translateX(-105%);
-    box-shadow: none;
+  return (
+    <main className="auth-shell">
+      <div className="auth-glow auth-glow-a" />
+      <div className="auth-glow auth-glow-b" />
+
+      <section className="auth-card">
+        <div className="brand-mark">
+          <img
+            src="/brand/tulipa-symbol.png"
+            alt="Símbolo da Tulipa.ia"
+            className="brand-symbol-image"
+          />
+        </div>
+        <img
+          src="/brand/tulipa-logo.png"
+          alt="Tulipa.ia"
+          className="auth-main-logo"
+        />
+        <p className="auth-subtitle">{loginSubtitle}</p>
+
+        <div className="auth-tabs">
+          <button
+            className={mode === "login" ? "active" : ""}
+            onClick={() => setMode("login")}
+          >
+            Entrar
+          </button>
+          {registrationsEnabled && (
+            <button
+              className={mode === "register" ? "active" : ""}
+              onClick={() => setMode("register")}
+            >
+              Criar conta
+            </button>
+          )}
+        </div>
+
+        <label>
+          E-mail
+          <input
+            type="email"
+            placeholder="voce@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+
+        <label>
+          Senha
+          <input
+            type="password"
+            placeholder="Sua senha"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleEmail()}
+          />
+        </label>
+
+        {mode === "register" && (
+          <div className="privacy-register-box">
+            <label className="privacy-checkbox">
+              <input
+                type="checkbox"
+                checked={privacyChecked}
+                onChange={(e) => setPrivacyChecked(e.target.checked)}
+              />
+              <span>
+                Li e aceito a{" "}
+                <button
+                  type="button"
+                  className="privacy-link-button"
+                  onClick={() => setPrivacyOpen(true)}
+                >
+                  Política de Privacidade
+                </button>
+              </span>
+            </label>
+          </div>
+        )}
+
+        <button
+          className="primary full"
+          disabled={busy || (mode === "register" && !privacyChecked)}
+          onClick={handleEmail}
+        >
+          {busy ? "Aguarde..." : mode === "register" ? "Criar minha conta" : "Entrar"}
+        </button>
+
+        <div className="separator"><span>ou</span></div>
+
+        <button className="google full" disabled={busy} onClick={handleGoogle}>
+          <span className="google-g">G</span>
+          Continuar com Google
+        </button>
+
+        {error && <p className="error-text">{error}</p>}
+
+        {showBetaMessage && (
+          <p className="test-note">{betaMessage}</p>
+        )}
+      </section>
+
+      {privacyOpen && (
+        <div className="privacy-backdrop" onClick={() => setPrivacyOpen(false)}>
+          <section className="privacy-modal privacy-modal-register" onClick={(e) => e.stopPropagation()}>
+            <div className="privacy-modal-header">
+              <div>
+                <strong>Política de Privacidade</strong>
+                <span>Leia com calma antes de criar sua conta.</span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setPrivacyOpen(false)}
+                aria-label="Fechar política"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="privacy-modal-scroll">
+              <PrivacyPolicyContent />
+            </div>
+            <div className="privacy-modal-footer">
+              <button
+                type="button"
+                className="privacy-modal-close"
+                onClick={() => setPrivacyOpen(false)}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  setPrivacyChecked(true);
+                  setPrivacyOpen(false);
+                }}
+              >
+                Li e aceito
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function TulipLogo({ compact = false }: { compact?: boolean }) {
+  return (
+    <img
+      src={compact ? "/brand/tulipa-symbol.png" : "/brand/tulipa-logo.png"}
+      alt={compact ? "Símbolo da Tulipa.ia" : "Tulipa.ia"}
+      className={compact ? "tulip-symbol-image" : "tulip-brand-image"}
+    />
+  );
+}
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [dark, setDark] = useState(() => localStorage.getItem("tulipa-dark") === "1");
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.innerWidth > 760;
+  });
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState("");
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [remaining, setRemaining] = useState(DEFAULT_DAILY_LIMIT);
+  const [dailyLimit, setDailyLimit] = useState(DEFAULT_DAILY_LIMIT);
+  const [publicConfig, setPublicConfig] = useState<PublicConfig>(DEFAULT_PUBLIC_CONFIG);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [adminCode, setAdminCode] = useState("");
+  const [adminData, setAdminData] = useState<AdminDashboardData | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminSaving, setAdminSaving] = useState(false);
+  const [chatLoading, setChatLoading] = useState(true);
+  const [privacyLoading, setPrivacyLoading] = useState(true);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [privacyAccepting, setPrivacyAccepting] = useState(false);
+  const [privacyAgreementChecked, setPrivacyAgreementChecked] = useState(false);
+  const [privacyViewOpen, setPrivacyViewOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; kind: "success" | "error" | "info" } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [displayNameInput, setDisplayNameInput] = useState("");
+  const [emailInput, setEmailInput] = useState("");
+  const [feedbackType, setFeedbackType] = useState("Sugestão");
+  const [feedbackText, setFeedbackText] = useState("");
+  const [listening, setListening] = useState(false);
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const active = useMemo(
+    () => conversations.find((c) => c.id === activeId) || conversations[0],
+    [conversations, activeId]
+  );
+
+  function showToast(message: string, kind: "success" | "error" | "info" = "info") {
+    setToast({ message, kind });
+    window.setTimeout(() => {
+      setToast((current) => (current?.message === message ? null : current));
+    }, 4200);
   }
 
-  .chat-area {
-    width: 100%;
-    min-width: 0;
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    localStorage.setItem("tulipa-dark", dark ? "1" : "0");
+  }, [dark]);
+
+  useEffect(() => {
+    fetch("/api/public-config")
+      .then(async (resp) => {
+        if (!resp.ok) throw new Error("Configuração indisponível");
+        return resp.json();
+      })
+      .then((data) => {
+        const next: PublicConfig = {
+          ...DEFAULT_PUBLIC_CONFIG,
+          ...data,
+        };
+        setPublicConfig(next);
+        setDailyLimit(next.dailyLimit);
+        setRemaining((current) => Math.min(current, next.dailyLimit));
+      })
+      .catch(() => {
+        setPublicConfig(DEFAULT_PUBLIC_CONFIG);
+      });
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 760) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+
+      if (!currentUser) {
+        setPrivacyAccepted(false);
+        setPrivacyLoading(false);
+        return;
+      }
+
+      setPrivacyLoading(true);
+
+      try {
+        const userRef = doc(db, "users", currentUser.uid);
+        const snap = await getDoc(userRef);
+        const data = snap.exists() ? snap.data() : {};
+
+        const accepted =
+          data?.privacyAccepted === true &&
+          data?.privacyPolicyVersion === PRIVACY_POLICY_VERSION;
+
+        setPrivacyAccepted(accepted);
+
+        await setDoc(
+          userRef,
+          {
+            uid: currentUser.uid,
+            email: currentUser.email || "",
+            displayName: currentUser.displayName || "",
+            photoURL: currentUser.photoURL || "",
+            lastSeenAt: serverTimestamp(),
+            lastActiveAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (error) {
+        console.error("Não foi possível atualizar o perfil no Firestore:", error);
+        setPrivacyAccepted(false);
+      } finally {
+        setPrivacyLoading(false);
+      }
+    });
+
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let stopped = false;
+
+    const heartbeat = async () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          lastActiveAt: serverTimestamp(),
+          lastSeenAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch(() => {});
+    };
+
+    heartbeat();
+    const interval = window.setInterval(heartbeat, 45000);
+
+    const handleActivity = () => heartbeat();
+    window.addEventListener("focus", handleActivity);
+    document.addEventListener("visibilitychange", handleActivity);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleActivity);
+      document.removeEventListener("visibilitychange", handleActivity);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!user) {
+      setConversations([]);
+      setActiveId("");
+      setChatLoading(false);
+      return;
+    }
+
+    setChatLoading(true);
+
+    (async () => {
+      try {
+        const q = query(
+          collection(db, "users", user.uid, "conversations"),
+          orderBy("updatedAt", "desc")
+        );
+        const snap = await getDocs(q);
+
+        if (cancelled) return;
+
+        const items: Conversation[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            title: data.title || "Conversa",
+            messages: Array.isArray(data.messages) ? data.messages : [],
+            updatedAt: data.updatedAt || Date.now(),
+          };
+        });
+
+        if (items.length) {
+          setConversations(items);
+          setActiveId(items[0].id);
+        } else {
+          const fresh = buildConversation();
+          setConversations([fresh]);
+          setActiveId(fresh.id);
+          persistConversation(fresh).catch(() => {});
+        }
+      } catch (error) {
+        console.error("Falha ao carregar conversas:", error);
+
+        if (!cancelled) {
+          const fresh = buildConversation();
+          setConversations([fresh]);
+          setActiveId(fresh.id);
+        }
+      } finally {
+        if (!cancelled) setChatLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [active?.messages, sending]);
+
+  useEffect(() => {
+    if (!user) return;
+    setDisplayNameInput(user.displayName || "");
+    setEmailInput(user.email || "");
+  }, [user]);
+
+  async function saveDisplayName() {
+    if (!user) return;
+    const name = displayNameInput.trim();
+    if (!name) {
+      showToast("Digite um nome válido.", "error");
+      return;
+    }
+
+    setSettingsBusy(true);
+    try {
+      await updateProfile(user, { displayName: name });
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          displayName: name,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      showToast("Nome atualizado.", "success");
+    } catch (error: any) {
+      showToast(error?.message || "Não foi possível atualizar o nome.", "error");
+    } finally {
+      setSettingsBusy(false);
+    }
   }
 
-  .topbar {
-    padding-left: 10px;
-    padding-right: 10px;
+  async function requestEmailChange() {
+    if (!user) return;
+    const nextEmail = emailInput.trim();
+
+    if (!nextEmail || nextEmail === user.email) {
+      showToast("Digite um e-mail diferente do atual.", "error");
+      return;
+    }
+
+    setSettingsBusy(true);
+    try {
+      await verifyBeforeUpdateEmail(user, nextEmail);
+      showToast(
+        "Enviamos um link de confirmação para o novo e-mail. Depois de confirmar, entre novamente se necessário.",
+        "success"
+      );
+    } catch (error: any) {
+      showToast(
+        error?.code === "auth/requires-recent-login"
+          ? "Por segurança, saia da conta, entre novamente e tente alterar o e-mail."
+          : error?.message || "Não foi possível iniciar a alteração do e-mail.",
+        "error"
+      );
+    } finally {
+      setSettingsBusy(false);
+    }
   }
 
-  .topbar-title span {
-    display: none;
+  async function resetPassword() {
+    if (!user?.email) return;
+
+    setSettingsBusy(true);
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      showToast("Enviamos um e-mail para redefinir sua senha.", "success");
+    } catch (error: any) {
+      showToast(error?.message || "Não foi possível enviar o e-mail de redefinição.", "error");
+    } finally {
+      setSettingsBusy(false);
+    }
   }
 
-  .usage-pill {
-    white-space: nowrap;
-    flex-shrink: 0;
+  async function clearConversationHistory() {
+    if (!user) return;
+
+    const confirmed = window.confirm(
+      "Apagar todo o histórico de conversas? Esta ação não pode ser desfeita."
+    );
+    if (!confirmed) return;
+
+    setSettingsBusy(true);
+    try {
+      const snap = await getDocs(
+        collection(db, "users", user.uid, "conversations")
+      );
+
+      await Promise.all(
+        snap.docs.map((item) =>
+          deleteDoc(doc(db, "users", user.uid, "conversations", item.id))
+        )
+      );
+
+      const fresh = buildConversation();
+      setConversations([fresh]);
+      setActiveId(fresh.id);
+      await persistConversation(fresh);
+      showToast("Histórico apagado.", "success");
+    } catch (error: any) {
+      showToast(error?.message || "Não foi possível apagar o histórico.", "error");
+    } finally {
+      setSettingsBusy(false);
+    }
   }
 
-  .messages {
-    width: calc(100% - 20px);
-    padding-bottom: 180px;
+  async function submitFeedback() {
+    if (!user) return;
+    const message = feedbackText.trim();
+
+    if (!message) {
+      showToast("Escreva seu feedback antes de enviar.", "error");
+      return;
+    }
+
+    setSettingsBusy(true);
+    try {
+      await addDoc(collection(db, "feedback"), {
+        uid: user.uid,
+        email: user.email || "",
+        displayName: user.displayName || "",
+        type: feedbackType,
+        message,
+        createdAt: serverTimestamp(),
+        status: "novo",
+      });
+
+      setFeedbackText("");
+      showToast("Feedback enviado. Obrigado!", "success");
+    } catch (error: any) {
+      showToast(error?.message || "Não foi possível enviar o feedback.", "error");
+    } finally {
+      setSettingsBusy(false);
+    }
   }
 
-  .composer-wrap,
-  .sidebar.closed ~ .chat-area .composer-wrap {
-    left: 0;
-    right: 0;
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-}
+  async function deleteMyAccount() {
+    if (!user) return;
 
+    const confirmed = window.confirm(
+      "Excluir sua conta da Tulipa IA? Seu histórico será apagado e esta ação não poderá ser desfeita."
+    );
+    if (!confirmed) return;
 
-/* Correção final do menu no celular */
-.mobile-close-sidebar {
-  display: none;
-}
+    setSettingsBusy(true);
 
-@media (max-width: 760px) {
-  .sidebar {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    height: 100dvh;
-    width: min(320px, 86vw) !important;
-    z-index: 30 !important;
-    transform: translateX(-105%);
-    transition: transform .22s ease;
-    box-shadow: none;
-  }
+    try {
+      const snap = await getDocs(
+        collection(db, "users", user.uid, "conversations")
+      );
 
-  .sidebar.open {
-    transform: translateX(0) !important;
-    box-shadow: 14px 0 50px rgba(0,0,0,.25);
-  }
+      await Promise.all(
+        snap.docs.map((item) =>
+          deleteDoc(doc(db, "users", user.uid, "conversations", item.id))
+        )
+      );
 
-  .sidebar.closed {
-    transform: translateX(-105%) !important;
-    width: min(320px, 86vw) !important;
+      await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
+      await deleteUser(user);
+    } catch (error: any) {
+      showToast(
+        error?.code === "auth/requires-recent-login"
+          ? "Por segurança, saia da conta, entre novamente e tente excluir a conta."
+          : error?.message || "Não foi possível excluir sua conta.",
+        "error"
+      );
+    } finally {
+      setSettingsBusy(false);
+    }
   }
 
-  .mobile-sidebar-backdrop {
-    z-index: 20 !important;
+  async function acceptPrivacyPolicy() {
+    if (!user || !privacyAgreementChecked) return;
+
+    setPrivacyAccepting(true);
+    try {
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          privacyAccepted: true,
+          privacyAcceptedAt: serverTimestamp(),
+          privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+          lastActiveAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setPrivacyAccepted(true);
+      showToast("Política de Privacidade aceita.", "success");
+    } catch (error: any) {
+      showToast(error?.message || "Não foi possível registrar o aceite.", "error");
+    } finally {
+      setPrivacyAccepting(false);
+    }
   }
 
-  .mobile-close-sidebar {
-    display: grid;
-    place-items: center;
-    margin-left: auto;
-    width: 36px;
-    height: 36px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--panel-strong);
-    color: var(--text);
-    cursor: pointer;
-    flex: 0 0 auto;
+  function buildConversation(): Conversation {
+    const now = Date.now();
+
+    return {
+      id: makeId("chat"),
+      title: "Nova conversa",
+      messages: [
+        {
+          id: makeId("msg"),
+          role: "assistant",
+          text: publicConfig.welcomeMessage,
+          createdAt: now,
+        },
+      ],
+      updatedAt: now,
+    };
   }
 
-  .sidebar-brand {
-    width: 100%;
+  function createConversation() {
+    if (typeof window !== "undefined" && window.innerWidth <= 760) {
+      setSidebarOpen(false);
+    }
+
+    const fresh = buildConversation();
+    setConversations((prev) => [fresh, ...prev]);
+    setActiveId(fresh.id);
+    setInput("");
+    setAttachment(null);
+
+    persistConversation(fresh).catch((error) => {
+      console.error("Falha ao salvar a nova conversa:", error);
+    });
   }
 
-  .sidebar-brand-text {
-    min-width: 0;
+  async function persistConversation(conv: Conversation) {
+    if (!user) return;
+    await setDoc(
+      doc(db, "users", user.uid, "conversations", conv.id),
+      conv,
+      { merge: true }
+    );
   }
 
-  .chat-area {
-    width: 100% !important;
-    margin-left: 0 !important;
+  async function removeConversation(id: string) {
+    if (!user) return;
+    await deleteDoc(doc(db, "users", user.uid, "conversations", id));
+    const next = conversations.filter((c) => c.id !== id);
+
+    if (next.length === 0) {
+      setConversations([]);
+      setActiveId("");
+      setTimeout(createConversation, 0);
+    } else {
+      setConversations(next);
+      if (activeId === id) setActiveId(next[0].id);
+    }
   }
 
-  .composer-wrap,
-  .sidebar.closed ~ .chat-area .composer-wrap,
-  .sidebar.open ~ .chat-area .composer-wrap {
-    left: 0 !important;
-  }
-}
+  async function callAdmin(action: string, payload: Record<string, unknown> = {}) {
+    if (!user) throw new Error("Usuário não autenticado.");
 
+    const token = await user.getIdToken(true);
+    const resp = await fetch("/api/admin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action,
+        code: adminCode,
+        ...payload,
+      }),
+    });
 
-/* Painel Administrativo */
-.admin-shell {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--brand) 15%, transparent), transparent 32%),
-    var(--bg);
-  color: var(--text);
-}
+    const raw = await resp.text();
+    let data: any = {};
 
-.admin-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  min-height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
-  backdrop-filter: blur(18px);
-}
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new Error("Resposta inválida do painel administrativo.");
+    }
 
-.admin-brand,
-.admin-actions,
-.admin-kicker,
-.admin-card-title,
-.admin-user-row {
-  display: flex;
-  align-items: center;
-}
+    if (!resp.ok) {
+      throw new Error(data?.error || "Acesso administrativo negado.");
+    }
 
-.admin-brand {
-  gap: 10px;
-}
-
-.admin-brand strong,
-.admin-brand span {
-  display: block;
-}
-
-.admin-brand span {
-  color: var(--muted);
-  font-size: .72rem;
-  margin-top: 2px;
-}
-
-.admin-actions {
-  gap: 8px;
-}
-
-.admin-actions button,
-.admin-save {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 9px 12px;
-  background: var(--panel-strong);
-  color: var(--text);
-  font-weight: 750;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.admin-actions .admin-exit {
-  color: #b42318;
-}
-
-.admin-content {
-  width: min(1080px, calc(100% - 28px));
-  margin: 0 auto;
-  padding: 28px 0 60px;
-}
-
-.admin-hero {
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  padding: 28px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--brand-soft) 82%, transparent), var(--panel-strong));
-  box-shadow: var(--shadow);
-}
-
-.admin-kicker {
-  gap: 7px;
-  color: var(--brand);
-  font-size: .78rem;
-  font-weight: 850;
-}
-
-.admin-hero h1 {
-  margin: 10px 0 6px;
-  font-size: clamp(1.7rem, 4vw, 2.5rem);
-}
-
-.admin-hero p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.55;
-}
-
-.admin-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin: 16px 0;
-}
-
-.admin-stat-card,
-.admin-panel-card {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.admin-stat-card {
-  padding: 18px;
-  border-radius: 18px;
-}
-
-.admin-stat-card svg {
-  color: var(--brand);
-}
-
-.admin-stat-card span,
-.admin-stat-card strong {
-  display: block;
-}
-
-.admin-stat-card span {
-  color: var(--muted);
-  font-size: .74rem;
-  margin-top: 10px;
-}
-
-.admin-stat-card strong {
-  font-size: 1.7rem;
-  margin-top: 2px;
-}
-
-.admin-panel-card {
-  border-radius: 22px;
-  padding: 22px;
-  margin-top: 16px;
-}
-
-.admin-card-title {
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 18px;
-}
-
-.admin-card-title h2 {
-  margin: 0 0 4px;
-  font-size: 1.05rem;
-}
-
-.admin-card-title p {
-  margin: 0;
-  color: var(--muted);
-  font-size: .78rem;
-}
-
-.admin-save {
-  background: linear-gradient(135deg, #54205f, #773484);
-  color: white;
-  border: 0;
-}
-
-.admin-form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.admin-form-grid label {
-  display: grid;
-  gap: 7px;
-  font-size: .78rem;
-  font-weight: 800;
-}
-
-.admin-form-grid input,
-.admin-form-grid textarea {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel-strong);
-  color: var(--text);
-  padding: 11px 12px;
-  resize: vertical;
-}
-
-.admin-full-field {
-  grid-column: 1 / -1;
-}
-
-.admin-switch-row {
-  grid-column: 1 / -1;
-  display: flex !important;
-  align-items: center;
-  gap: 10px !important;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  padding: 12px;
-  background: var(--panel-strong);
-}
-
-.admin-switch-row input {
-  width: 18px;
-  height: 18px;
-}
-
-.admin-switch-row strong,
-.admin-switch-row small {
-  display: block;
-}
-
-.admin-switch-row small {
-  color: var(--muted);
-  margin-top: 2px;
-  font-weight: 500;
-}
-
-.admin-user-list {
-  display: grid;
-  gap: 8px;
-}
-
-.admin-user-row {
-  gap: 10px;
-  padding: 10px;
-  border-radius: 13px;
-  border: 1px solid var(--line);
-  background: var(--panel-strong);
-}
-
-.admin-user-row > div:nth-child(2) {
-  flex: 1;
-  min-width: 0;
-}
-
-.admin-user-row strong,
-.admin-user-row span {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.admin-user-row strong {
-  font-size: .82rem;
-}
-
-.admin-user-row span,
-.admin-user-row small {
-  color: var(--muted);
-  font-size: .69rem;
-  margin-top: 2px;
-}
-
-@media (max-width: 760px) {
-  .admin-topbar {
-    padding: 10px 12px;
+    return data;
   }
 
-  .admin-actions button {
-    padding: 8px;
+  async function unlockAdmin(code: string) {
+    if (!user) return false;
+
+    setAdminLoading(true);
+    try {
+      const token = await user.getIdToken(true);
+      const resp = await fetch("/api/admin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "unlock",
+          code,
+        }),
+      });
+
+      const raw = await resp.text();
+      const data = raw ? JSON.parse(raw) : {};
+
+      if (!resp.ok) return false;
+
+      setAdminCode(code);
+      setAdminData(data);
+      setAdminUnlocked(true);
+      setSidebarOpen(false);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setAdminLoading(false);
+    }
   }
 
-  .admin-actions button {
-    font-size: 0;
+  async function refreshAdmin() {
+    setAdminLoading(true);
+    try {
+      const data = await callAdmin("dashboard");
+      setAdminData(data);
+    } catch (error: any) {
+      alert(error?.message || "Não foi possível atualizar o painel.");
+    } finally {
+      setAdminLoading(false);
+    }
   }
 
-  .admin-actions button svg {
-    margin: 0;
+  async function saveAdminConfig() {
+    if (!adminData) return;
+
+    setAdminSaving(true);
+    try {
+      const data = await callAdmin("updateConfig", {
+        config: adminData.config,
+      });
+
+      setAdminData((prev) =>
+        prev
+          ? {
+              ...prev,
+              config: data.config,
+            }
+          : prev
+      );
+
+      setPublicConfig(data.config);
+      setDailyLimit(data.config.dailyLimit);
+      alert("Configurações salvas.");
+    } catch (error: any) {
+      alert(error?.message || "Não foi possível salvar.");
+    } finally {
+      setAdminSaving(false);
+    }
   }
 
-  .admin-stats-grid {
-    grid-template-columns: 1fr;
+  function toggleVoiceInput() {
+    if (typeof window === "undefined") return;
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("O reconhecimento de voz não é compatível com este navegador. Tente usar o Chrome ou Edge.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+      recognitionRef.current = recognition;
+      setListening(true);
+    };
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      if (transcript.trim()) setInput(transcript.trim());
+    };
+    recognition.onerror = (event: any) => {
+      if (event.error !== "aborted" && event.error !== "no-speech") {
+        alert("Não foi possível reconhecer sua voz. Verifique a permissão do microfone e tente novamente.");
+      }
+      setListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.start();
   }
 
-  .admin-form-grid {
-    grid-template-columns: 1fr;
+  function chooseAttachment() {
+    if (sending) return;
+    fileInputRef.current?.click();
   }
 
-  .admin-full-field,
-  .admin-switch-row {
-    grid-column: 1;
+  function handleAttachment(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+    if (!allowedTypes.includes(file.type)) {
+      alert("Envie apenas PDF, JPG, JPEG ou PNG.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("O arquivo deve ter no máximo 10 MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const commaIndex = result.indexOf(",");
+      if (commaIndex < 0) {
+        alert("Não foi possível ler o arquivo.");
+        return;
+      }
+
+      setAttachment({
+        name: file.name,
+        mimeType: file.type,
+        data: result.slice(commaIndex + 1),
+        kind: file.type === "application/pdf" ? "pdf" : "image",
+      });
+    };
+    reader.onerror = () => alert("Não foi possível ler o arquivo.");
+    reader.readAsDataURL(file);
   }
 
-  .admin-card-title {
-    align-items: flex-start;
-    flex-direction: column;
+  async function send() {
+    const text = input.trim();
+    const currentAttachment = attachment;
+    if ((!text && !currentAttachment) || !user || sending) return;
+
+    if (text.startsWith("#") && !currentAttachment) {
+      setInput("");
+      const unlocked = await unlockAdmin(text);
+
+      if (unlocked) return;
+
+      const baseForNotice = active || buildConversation();
+      const notice: Message = {
+        id: makeId("msg"),
+        role: "assistant",
+        text: "🌷 Comando não reconhecido.",
+        createdAt: Date.now(),
+      };
+
+      const updated: Conversation = {
+        ...baseForNotice,
+        messages: [...baseForNotice.messages, notice],
+        updatedAt: Date.now(),
+      };
+
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === updated.id);
+        return exists
+          ? prev.map((c) => (c.id === updated.id ? updated : c))
+          : [updated, ...prev];
+      });
+
+      if (!active) setActiveId(updated.id);
+      return;
+    }
+
+    let base = active;
+
+    if (!base) {
+      base = buildConversation();
+      setConversations([base]);
+      setActiveId(base.id);
+    }
+
+    setInput("");
+    setAttachment(null);
+    setSending(true);
+
+    const userMessage: Message = {
+      id: makeId("msg"),
+      role: "user",
+      text: text || (currentAttachment ? `📎 ${currentAttachment.name}` : ""),
+      createdAt: Date.now(),
+      attachment: currentAttachment
+        ? {
+            name: currentAttachment.name,
+            mimeType: currentAttachment.mimeType,
+            kind: currentAttachment.kind,
+          }
+        : undefined,
+    };
+
+    const historyBefore = base.messages;
+    const nextTitle =
+      base.title === "Nova conversa"
+        ? (text || currentAttachment?.name || "Novo anexo").replace(/\s+/g, " ").slice(0, 42)
+        : base.title;
+
+    const withUser: Conversation = {
+      ...base,
+      title: nextTitle,
+      messages: [...base.messages, userMessage],
+      updatedAt: Date.now(),
+    };
+
+    setConversations((prev) => {
+      const exists = prev.some((c) => c.id === base!.id);
+      return exists
+        ? prev.map((c) => (c.id === base!.id ? withUser : c))
+        : [withUser, ...prev];
+    });
+
+    try {
+      const token = await user.getIdToken(true);
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          message: text,
+          history: historyBefore
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .slice(-18)
+            .map((m) => ({ role: m.role, text: m.text })),
+          attachment: currentAttachment
+            ? {
+                name: currentAttachment.name,
+                mimeType: currentAttachment.mimeType,
+                data: currentAttachment.data,
+              }
+            : null,
+        }),
+      });
+
+      const raw = await resp.text();
+      let data: any = {};
+
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          "🌷 A Tulipa IA recebeu uma resposta inesperada do servidor. Atualize a página e tente novamente."
+        );
+      }
+
+      if (!resp.ok) {
+        if (resp.status === 429 && data?.code === "DAILY_LIMIT") {
+          setRemaining(0);
+          throw new Error(
+            "🌷 O jardim da Tulipa IA já recebeu todas as mensagens de teste de hoje. Volte amanhã para continuarmos florescendo ideias juntos."
+          );
+        }
+
+        if (resp.status === 429) {
+          throw new Error(
+            "🌷 O jardim da Tulipa IA ficou congestionado por alguns instantes. Aguarde um pouco, atualize o site e tente novamente."
+          );
+        }
+
+        if (data?.code === "FIRESTORE_NOT_READY") {
+          throw new Error(
+            "🌷 O jardim da Tulipa IA ainda está sendo preparado. Tente novamente em alguns instantes."
+          );
+        }
+
+        throw new Error(
+          data?.error ||
+            "🌷 A Tulipa IA teve um pequeno imprevisto. Atualize o site e tente novamente."
+        );
+      }
+
+      if (typeof data.remaining === "number") setRemaining(data.remaining);
+      if (typeof data.limit === "number") setDailyLimit(data.limit);
+
+      const aiMessage: Message = {
+        id: makeId("msg"),
+        role: "assistant",
+        text: data.answer,
+        createdAt: Date.now(),
+      };
+
+      const complete: Conversation = {
+        ...withUser,
+        messages: [...withUser.messages, aiMessage],
+        updatedAt: Date.now(),
+      };
+
+      setConversations((prev) =>
+        prev.map((c) => (c.id === base!.id ? complete : c))
+      );
+
+      persistConversation(complete).catch((error) => {
+        console.error("Falha ao salvar a conversa:", error);
+      });
+    } catch (err: any) {
+      const aiMessage: Message = {
+        id: makeId("msg"),
+        role: "assistant",
+        text:
+          err?.message ||
+          "🌷 O jardim da Tulipa IA ficou congestionado. Atualize o site e tente novamente em alguns instantes.",
+        createdAt: Date.now(),
+      };
+
+      const complete: Conversation = {
+        ...withUser,
+        messages: [...withUser.messages, aiMessage],
+        updatedAt: Date.now(),
+      };
+
+      setConversations((prev) =>
+        prev.map((c) => (c.id === base!.id ? complete : c))
+      );
+
+      persistConversation(complete).catch(() => {});
+    } finally {
+      setSending(false);
+    }
   }
 
-  .admin-save {
-    width: 100%;
-    justify-content: center;
-  }
-}
-
-.admin-user-action {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--text);
-  border-radius: 9px;
-  padding: 7px 9px;
-  font-size: .7rem;
-  font-weight: 750;
-  cursor: pointer;
-}
-.admin-user-action:hover {
-  background: var(--brand-soft);
-}
-
-
-/* Identidade visual oficial Tulipa.ia */
-.brand-mark {
-  overflow: hidden;
-  background: #5b1f67;
-  padding: 0;
-}
-
-.brand-symbol-image {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  object-position: center;
-}
-
-.auth-main-logo {
-  display: block;
-  width: min(250px, 82%);
-  height: 72px;
-  margin: 8px auto 10px;
-  object-fit: cover;
-  object-position: center;
-  border-radius: 14px;
-}
-
-.tulip-brand-image {
-  display: block;
-  width: 175px;
-  height: 48px;
-  object-fit: cover;
-  object-position: center;
-  border-radius: 10px;
-  flex: 0 0 auto;
-}
-
-.tulip-symbol-image {
-  display: block;
-  width: 42px;
-  height: 42px;
-  object-fit: cover;
-  object-position: center;
-  border-radius: 13px;
-  flex: 0 0 auto;
-}
-
-.message-avatar {
-  overflow: hidden;
-  background: #5b1f67;
-  padding: 0;
-}
-
-.message-logo-image {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  object-position: center;
-  border-radius: inherit;
-}
-
-.loading-screen .tulip-brand-image {
-  width: 220px;
-  height: 62px;
-}
-
-.admin-brand .tulip-brand-image {
-  width: 150px;
-  height: 42px;
-}
-
-.sidebar.closed .tulip-symbol-image {
-  width: 42px;
-  height: 42px;
-}
-
-@media (max-width: 760px) {
-  .auth-main-logo {
-    width: min(220px, 86%);
-    height: 64px;
+  if (authLoading || (user && privacyLoading)) {
+    return <div className="loading-screen"><TulipLogo /><p>Carregando Tulipa IA...</p></div>;
   }
 
-  .tulip-brand-image {
-    width: 165px;
-    height: 46px;
+  if (!user) {
+    return (
+      <>
+        <LoginScreen
+          betaMessage={publicConfig.betaMessage}
+          showBetaMessage={publicConfig.showBetaMessage}
+          loginSubtitle={publicConfig.loginSubtitle}
+          registrationsEnabled={publicConfig.registrationsEnabled}
+        />
+        <Analytics />
+      </>
+    );
   }
 
-  .message-avatar {
-    width: 32px;
-    height: 32px;
+  if (user && !privacyAccepted) {
+    return (
+      <>
+        <div className="privacy-gate-shell">
+          <section className="privacy-gate-card">
+            <div className="privacy-gate-header">
+              <img
+                src="/brand/tulipa-symbol.png"
+                alt="Tulipa.ia"
+                className="privacy-gate-logo"
+              />
+              <div>
+                <h1>Política de Privacidade</h1>
+                <p>Para continuar usando a Tulipa IA, leia e aceite a versão atual.</p>
+              </div>
+            </div>
+
+            <div className="privacy-gate-scroll">
+              <PrivacyPolicyContent />
+            </div>
+
+            <label className="privacy-checkbox privacy-gate-check">
+              <input
+                type="checkbox"
+                checked={privacyAgreementChecked}
+                onChange={(e) => setPrivacyAgreementChecked(e.target.checked)}
+              />
+              <span>Li e aceito a Política de Privacidade da Tulipa IA.</span>
+            </label>
+
+            <div className="privacy-gate-actions">
+              <button
+                className="privacy-logout"
+                onClick={() => signOut(auth)}
+                disabled={privacyAccepting}
+              >
+                Sair da conta
+              </button>
+              <button
+                className="primary"
+                onClick={acceptPrivacyPolicy}
+                disabled={!privacyAgreementChecked || privacyAccepting}
+              >
+                {privacyAccepting ? "Registrando..." : "Aceitar e continuar"}
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {toast && (
+          <div className={`app-toast ${toast.kind}`}>
+            {toast.message}
+          </div>
+        )}
+        <Analytics />
+      </>
+    );
   }
 
-  .admin-brand .tulip-brand-image {
-    width: 132px;
-    height: 38px;
-  }
-}
-
-/* Botão de mensagem por voz */
-.mic-button {
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--panel);
-  color: var(--brand);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  flex: 0 0 auto;
-  transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
-}
-
-.mic-button:hover {
-  background: var(--brand-soft);
-}
-
-.mic-button:active {
-  transform: scale(.95);
-}
-
-.mic-button:disabled {
-  opacity: .38;
-  cursor: not-allowed;
-}
-
-.mic-button.listening {
-  background: var(--brand);
-  color: white;
-  box-shadow: 0 0 0 5px color-mix(in srgb, var(--brand) 18%, transparent);
-  animation: tulipa-mic-pulse 1.15s ease-in-out infinite;
-}
-
-@keyframes tulipa-mic-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 16%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 9px color-mix(in srgb, var(--brand) 6%, transparent);
-  }
-}
-
-@media (max-width: 760px) {
-  .mic-button {
-    width: 42px;
-    height: 42px;
-  }
-}
-
-
-/* Configurações da conta */
-.settings-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: 18px;
-  background: rgba(8, 3, 10, .58);
-  backdrop-filter: blur(5px);
-}
-
-.settings-modal {
-  width: min(720px, 100%);
-  max-height: min(88vh, 820px);
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  background: var(--panel-strong);
-  color: var(--text);
-  box-shadow: 0 30px 100px rgba(0,0,0,.34);
-  overflow: hidden;
-}
-
-.settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--line);
-}
-
-.settings-header strong,
-.settings-header span {
-  display: block;
-}
-
-.settings-header strong {
-  font-size: 1.05rem;
-}
-
-.settings-header span {
-  color: var(--muted);
-  font-size: .74rem;
-  margin-top: 3px;
-}
-
-.settings-scroll {
-  overflow: auto;
-  max-height: calc(min(88vh, 820px) - 76px);
-  padding: 18px;
-}
-
-.settings-section {
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 16px;
-  margin-bottom: 12px;
-  background: var(--panel);
-}
-
-.settings-section h3 {
-  margin: 0 0 10px;
-  font-size: .95rem;
-}
-
-.settings-section p {
-  margin: 0 0 12px;
-  color: var(--muted);
-  font-size: .78rem;
-  line-height: 1.5;
-}
-
-.settings-section label {
-  display: grid;
-  gap: 7px;
-  font-size: .78rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-}
-
-.settings-section input,
-.settings-section textarea,
-.settings-section select {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel-strong);
-  color: var(--text);
-  padding: 11px 12px;
-}
-
-.settings-inline {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-}
-
-.settings-inline button,
-.settings-secondary-button,
-.settings-primary-button,
-.settings-danger-outline,
-.settings-danger-button {
-  border-radius: 12px;
-  padding: 10px 13px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.settings-inline button,
-.settings-secondary-button {
-  border: 1px solid var(--line);
-  background: var(--panel-strong);
-  color: var(--text);
-}
-
-.settings-primary-button {
-  border: 0;
-  background: linear-gradient(135deg,#54205f,#773484);
-  color: white;
-}
-
-.settings-danger-outline {
-  border: 1px solid rgba(180,35,24,.35);
-  background: transparent;
-  color: #b42318;
-}
-
-.settings-danger-button {
-  border: 0;
-  background: #b42318;
-  color: white;
-}
-
-.settings-danger-zone {
-  border-color: rgba(180,35,24,.22);
-}
-
-.settings-message {
-  padding: 11px 12px;
-  border-radius: 12px;
-  background: var(--brand-soft);
-  color: var(--text);
-  font-size: .78rem;
-  line-height: 1.45;
-}
-
-.settings-section button:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-
-@media (max-width: 760px) {
-  .settings-backdrop {
-    padding: 0;
-    align-items: end;
-  }
-
-  .settings-modal {
-    width: 100%;
-    max-height: 92dvh;
-    border-radius: 22px 22px 0 0;
-  }
-
-  .settings-scroll {
-    max-height: calc(92dvh - 76px);
-  }
-
-  .settings-inline {
-    grid-template-columns: 1fr;
-  }
-}
-
-
-/* Feedbacks no painel administrativo */
-.feedback-count {
-  font-size: .72rem;
-  font-weight: 800;
-  color: var(--brand);
-  background: var(--brand-soft);
-  padding: 6px 10px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.admin-feedback-list {
-  display: grid;
-  gap: 10px;
-}
-
-.admin-empty-feedback {
-  padding: 18px;
-  text-align: center;
-  color: var(--muted);
-  border: 1px dashed var(--line);
-  border-radius: 14px;
-}
-
-.admin-feedback-card {
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 14px;
-  background: var(--panel-strong);
-}
-
-.admin-feedback-card.status-novo {
-  border-left: 4px solid var(--brand);
-}
-
-.admin-feedback-card.status-arquivado {
-  opacity: .72;
-}
-
-.admin-feedback-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.admin-feedback-top strong,
-.admin-feedback-top span {
-  display: block;
-}
-
-.admin-feedback-top strong {
-  margin-top: 7px;
-  font-size: .84rem;
-}
-
-.admin-feedback-top > div > span {
-  color: var(--muted);
-  font-size: .7rem;
-  margin-top: 2px;
-}
-
-.admin-feedback-top time {
-  color: var(--muted);
-  font-size: .68rem;
-  white-space: nowrap;
-}
-
-.admin-feedback-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.admin-feedback-badges span {
-  display: inline-flex;
-  width: fit-content;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: .65rem;
-  font-weight: 800;
-}
-
-.feedback-type {
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
-.feedback-status {
-  border: 1px solid var(--line);
-}
-
-.feedback-status.novo {
-  color: var(--brand);
-}
-
-.feedback-status.lido {
-  color: #16794b;
-}
-
-.feedback-status.arquivado {
-  color: var(--muted);
-}
-
-.admin-feedback-message {
-  margin: 13px 0;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  font-size: .82rem;
-}
-
-.admin-feedback-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.admin-feedback-actions button {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 7px 9px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: .7rem;
-  font-weight: 750;
-  cursor: pointer;
-}
-
-.admin-feedback-actions .feedback-delete {
-  color: #b42318;
-}
-
-@media (max-width: 760px) {
-  .admin-feedback-top {
-    flex-direction: column;
-  }
-
-  .admin-feedback-top time {
-    white-space: normal;
-  }
-}
-/* ===== Anexos da Tulipa IA ===== */
-.attachment-input {
-  display: none;
-}
-
-.attach-button {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--muted);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: 0.18s ease;
-}
-
-.attach-button:hover:not(:disabled) {
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
-.attach-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.attachment-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 760px;
-  margin: 0 auto 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel-strong);
-}
-
-.attachment-preview-icon {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
-.attachment-preview-info {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.attachment-preview-info strong {
-  font-size: .78rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.attachment-preview-info span {
-  margin-top: 2px;
-  font-size: .68rem;
-  color: var(--muted);
-}
-
-.attachment-preview > button {
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--muted);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.attachment-preview > button:hover {
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
-.message-attachment {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 7px;
-  padding: 7px 9px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.16);
-  font-size: .72rem;
-  font-weight: 750;
-}
-
-.message-attachment span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 760px) {
-  .attachment-preview {
-    margin-left: 0;
-    margin-right: 0;
+  if (adminUnlocked && adminData) {
+    return (
+      <div className="admin-shell">
+        <header className="admin-topbar">
+          <div className="admin-brand">
+            <TulipLogo />
+            <div>
+              <strong>Painel Administrativo</strong>
+              <span>Tulipa IA</span>
+            </div>
+          </div>
+
+          <div className="admin-actions">
+            <button onClick={refreshAdmin} disabled={adminLoading}>
+              <RefreshCw size={17} />
+              Atualizar
+            </button>
+            <button
+              className="admin-exit"
+              onClick={() => {
+                setAdminUnlocked(false);
+                setAdminCode("");
+                setAdminData(null);
+              }}
+            >
+              <X size={17} />
+              Voltar ao chat
+            </button>
+          </div>
+        </header>
+
+        <main className="admin-content">
+          <section className="admin-hero">
+            <div>
+              <div className="admin-kicker">
+                <ShieldCheck size={17} />
+                Acesso verificado
+              </div>
+              <h1>Controle da Tulipa IA 🌷</h1>
+              <p>
+                Altere configurações do Beta sem editar o código ou fazer novo deploy.
+              </p>
+            </div>
+          </section>
+
+          <section className="admin-stats-grid">
+            <article className="admin-stat-card">
+              <Users size={20} />
+              <span>Usuários</span>
+              <strong>{adminData.stats.users}</strong>
+            </article>
+            <article className="admin-stat-card">
+              <Bot size={20} />
+              <span>Conversas</span>
+              <strong>{adminData.stats.conversations}</strong>
+            </article>
+            <article className="admin-stat-card">
+              <BarChart3 size={20} />
+              <span>Mensagens hoje</span>
+              <strong>{adminData.stats.messagesToday}</strong>
+            </article>
+          </section>
+
+          <section className="admin-panel-card">
+            <div className="admin-card-title">
+              <div>
+                <h2>Configurações do Beta</h2>
+                <p>Essas alterações são salvas no Firebase e passam a valer no site.</p>
+              </div>
+              <button
+                className="admin-save"
+                onClick={saveAdminConfig}
+                disabled={adminSaving}
+              >
+                <Save size={17} />
+                {adminSaving ? "Salvando..." : "Salvar alterações"}
+              </button>
+            </div>
+
+            <div className="admin-form-grid">
+              <label>
+                Limite diário por usuário
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={adminData.config.dailyLimit}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              dailyLimit: Math.max(1, Number(e.target.value || 1)),
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label>
+                Subtítulo da assistente
+                <input
+                  value={adminData.config.assistantSubtitle}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              assistantSubtitle: e.target.value,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-full-field">
+                Mensagem do Beta
+                <textarea
+                  rows={3}
+                  value={adminData.config.betaMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              betaMessage: e.target.value,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
+                  checked={adminData.config.showBetaMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, showBetaMessage: e.target.checked } }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Exibir mensagens de Beta</strong>
+                  <small>Desative para remover os avisos de Beta do login e do chat.</small>
+                </span>
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
+                  checked={adminData.config.showDailyCounter}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, showDailyCounter: e.target.checked } }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Exibir contador diário</strong>
+                  <small>Mostra ou esconde o contador de mensagens no topo.</small>
+                </span>
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
+                  checked={adminData.config.registrationsEnabled}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, registrationsEnabled: e.target.checked } }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Permitir novos cadastros</strong>
+                  <small>Desative se quiser fechar temporariamente novas contas.</small>
+                </span>
+              </label>
+
+              <label className="admin-full-field">
+                Mensagem inicial da Tulipa
+                <textarea
+                  rows={4}
+                  value={adminData.config.welcomeMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, welcomeMessage: e.target.value } }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-full-field">
+                Texto da tela de login
+                <textarea
+                  rows={3}
+                  value={adminData.config.loginSubtitle}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? { ...prev, config: { ...prev.config, loginSubtitle: e.target.value } }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+
+              <label className="admin-switch-row">
+                <input
+                  type="checkbox"
+                  checked={adminData.config.maintenanceMode}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              maintenanceMode: e.target.checked,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+                <span>
+                  <strong>Modo manutenção</strong>
+                  <small>Impede temporariamente novas mensagens para a IA.</small>
+                </span>
+              </label>
+
+              <label className="admin-full-field">
+                Mensagem de manutenção
+                <textarea
+                  rows={2}
+                  value={adminData.config.maintenanceMessage}
+                  onChange={(e) =>
+                    setAdminData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            config: {
+                              ...prev.config,
+                              maintenanceMessage: e.target.value,
+                            },
+                          }
+                        : prev
+                    )
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="admin-panel-card">
+            <div className="admin-card-title">
+              <div>
+                <h2>Usuários recentes</h2>
+                <p>Lista administrativa das contas cadastradas.</p>
+              </div>
+            </div>
+
+            <div className="admin-user-list">
+              {adminData.users.map((item) => (
+                <div className="admin-user-row" key={item.uid}>
+                  <div className="avatar-fallback">
+                    <UserRound size={16} />
+                  </div>
+                  <div>
+                    <strong>{item.displayName || "Sem nome"}</strong>
+                    <span>{item.email || "Sem e-mail"}</span>
+                  </div>
+                  <div className="admin-user-presence">
+                    <span className={item.online ? "presence-dot online" : "presence-dot"} />
+                    <strong>{item.online ? "Online agora" : "Offline"}</strong>
+                    <small>
+                      {item.lastSeenAt
+                        ? `Último acesso: ${new Date(item.lastSeenAt).toLocaleString("pt-BR")}`
+                        : "Último acesso indisponível"}
+                    </small>
+                  </div>
+                  <small>{item.disabled ? "Bloqueado" : "Ativo"}</small>
+                  <button
+                    className="admin-user-action"
+                    onClick={async () => {
+                      try {
+                        await callAdmin("resetUserUsage", { uid: item.uid });
+                        alert("Limite diário desse usuário foi zerado.");
+                        await refreshAdmin();
+                      } catch (error: any) {
+                        alert(error?.message || "Não foi possível zerar o uso.");
+                      }
+                    }}
+                  >
+                    Zerar uso
+                  </button>
+                  <button
+                    className="admin-user-action"
+                    onClick={async () => {
+                      try {
+                        await callAdmin("setUserDisabled", {
+                          uid: item.uid,
+                          disabled: !item.disabled,
+                        });
+                        await refreshAdmin();
+                      } catch (error: any) {
+                        alert(error?.message || "Não foi possível alterar o usuário.");
+                      }
+                    }}
+                  >
+                    {item.disabled ? "Desbloquear" : "Bloquear"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="admin-panel-card">
+            <div className="admin-card-title">
+              <div>
+                <h2>Feedbacks recebidos</h2>
+                <p>Sugestões, elogios e problemas enviados pelos usuários.</p>
+              </div>
+              <span className="feedback-count">
+                {adminData.feedbacks?.length || 0} recebidos
+              </span>
+            </div>
+
+            <div className="admin-feedback-list">
+              {(adminData.feedbacks || []).length === 0 ? (
+                <div className="admin-empty-feedback">
+                  Nenhum feedback recebido ainda.
+                </div>
+              ) : (
+                adminData.feedbacks.map((feedback) => (
+                  <article
+                    className={`admin-feedback-card status-${feedback.status || "novo"}`}
+                    key={feedback.id}
+                  >
+                    <div className="admin-feedback-top">
+                      <div>
+                        <div className="admin-feedback-badges">
+                          <span className="feedback-type">{feedback.type || "Feedback"}</span>
+                          <span className={`feedback-status ${feedback.status || "novo"}`}>
+                            {feedback.status === "lido"
+                              ? "Lido"
+                              : feedback.status === "arquivado"
+                                ? "Arquivado"
+                                : "Novo"}
+                          </span>
+                        </div>
+                        <strong>{feedback.displayName || "Usuário"}</strong>
+                        <span>{feedback.email || "Sem e-mail"}</span>
+                      </div>
+                      <time>
+                        {feedback.createdAt
+                          ? new Date(feedback.createdAt).toLocaleString("pt-BR")
+                          : ""}
+                      </time>
+                    </div>
+
+                    <p className="admin-feedback-message">{feedback.message}</p>
+
+                    <div className="admin-feedback-actions">
+                      {feedback.status !== "lido" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await callAdmin("updateFeedbackStatus", {
+                                feedbackId: feedback.id,
+                                status: "lido",
+                              });
+                              await refreshAdmin();
+                            } catch (error: any) {
+                              alert(error?.message || "Não foi possível marcar como lido.");
+                            }
+                          }}
+                        >
+                          Marcar como lido
+                        </button>
+                      )}
+
+                      {feedback.status !== "arquivado" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await callAdmin("updateFeedbackStatus", {
+                                feedbackId: feedback.id,
+                                status: "arquivado",
+                              });
+                              await refreshAdmin();
+                            } catch (error: any) {
+                              alert(error?.message || "Não foi possível arquivar.");
+                            }
+                          }}
+                        >
+                          Arquivar
+                        </button>
+                      )}
+
+                      <button
+                        className="feedback-delete"
+                        onClick={async () => {
+                          const confirmed = window.confirm(
+                            "Excluir este feedback? Esta ação não pode ser desfeita."
+                          );
+                          if (!confirmed) return;
+
+                          try {
+                            await callAdmin("deleteFeedback", {
+                              feedbackId: feedback.id,
+                            });
+                            await refreshAdmin();
+                          } catch (error: any) {
+                            alert(error?.message || "Não foi possível excluir o feedback.");
+                          }
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        </main>
+
+        <Analytics />
+      </div>
+    );
   }
 
-  .attach-button {
-    width: 36px;
-    height: 36px;
-    flex-basis: 36px;
-  }
-}
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
+        <div className="sidebar-brand">
+          <TulipLogo compact={!sidebarOpen} />
+          {sidebarOpen && (
+            <div className="sidebar-brand-text">
+              <span>{publicConfig.showBetaMessage ? "Beta" : ""}</span>
+            </div>
+          )}
 
-/* ===== Política de Privacidade, pop-ups e presença ===== */
-.privacy-register-box {
-  margin: 4px 0 14px;
-}
+          <button
+            className="mobile-close-sidebar"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Fechar menu"
+            title="Fechar menu"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-.privacy-checkbox {
-  display: flex !important;
-  align-items: flex-start;
-  grid-template-columns: none !important;
-  gap: 9px !important;
-  font-size: .76rem !important;
-  font-weight: 650 !important;
-  line-height: 1.45;
-}
+        <button className="new-chat" onClick={createConversation}>
+          <Plus size={18} />
+          {sidebarOpen && "Nova conversa"}
+        </button>
 
-.privacy-checkbox input {
-  width: 17px !important;
-  height: 17px;
-  margin-top: 2px;
-  flex: 0 0 auto;
-}
+        {sidebarOpen && (
+          <div className="conversation-list">
+            <p className="section-label">Conversas</p>
+            {conversations.map((conv) => (
+              <div
+                key={conv.id}
+                className={`conversation-row ${conv.id === activeId ? "active" : ""}`}
+              >
+                <button onClick={() => {
+                  setActiveId(conv.id);
+                  if (typeof window !== "undefined" && window.innerWidth <= 760) {
+                    setSidebarOpen(false);
+                  }
+                }}>
+                  <Bot size={15} />
+                  <span>{conv.title}</span>
+                </button>
+                <button
+                  className="delete-chat"
+                  title="Excluir conversa"
+                  onClick={() => removeConversation(conv.id)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
-.privacy-link-button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--brand);
-  font-weight: 850;
-  cursor: pointer;
-  text-decoration: underline;
-}
+        <div className="sidebar-bottom">
+          {sidebarOpen && (
+            <div className="profile-mini">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" />
+              ) : (
+                <div className="avatar-fallback"><UserRound size={17} /></div>
+              )}
+              <div>
+                <strong>{user.displayName || "Minha conta"}</strong>
+                <span>{user.email}</span>
+              </div>
+            </div>
+          )}
 
-.privacy-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 18px;
-  background: rgba(8, 3, 10, .66);
-  backdrop-filter: blur(6px);
-}
+          <button onClick={() => setSettingsOpen(true)}>
+            <Settings size={18} />
+            {sidebarOpen && "Configurações"}
+          </button>
 
-.privacy-modal {
-  width: min(820px, 100%);
-  max-height: 90vh;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  background: var(--panel-strong);
-  color: var(--text);
-  box-shadow: 0 34px 110px rgba(0,0,0,.4);
-}
+          <button onClick={() => setDark((v) => !v)}>
+            {dark ? <Sun size={18} /> : <Moon size={18} />}
+            {sidebarOpen && (dark ? "Modo claro" : "Modo escuro")}
+          </button>
 
-.privacy-modal-header {
-  min-height: 68px;
-  padding: 14px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  border-bottom: 1px solid var(--line);
-}
+          <button onClick={() => signOut(auth)}>
+            <LogOut size={18} />
+            {sidebarOpen && "Sair da conta"}
+          </button>
+        </div>
+      </aside>
 
-.privacy-modal-header strong,
-.privacy-modal-header span {
-  display: block;
-}
+      {sidebarOpen && (
+        <button
+          className="mobile-sidebar-backdrop"
+          aria-label="Fechar menu"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-.privacy-modal-header span {
-  color: var(--muted);
-  font-size: .72rem;
-  margin-top: 2px;
-}
+      {settingsOpen && (
+        <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}>
+          <section
+            className="settings-modal"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Configurações da conta"
+          >
+            <div className="settings-header">
+              <div>
+                <strong>Configurações</strong>
+                <span>Conta, privacidade e feedback</span>
+              </div>
+              <button
+                className="icon-button"
+                onClick={() => setSettingsOpen(false)}
+                aria-label="Fechar configurações"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-.privacy-modal-scroll {
-  max-height: calc(90vh - 68px);
-  overflow: auto;
-  padding: 20px;
-}
+            <div className="settings-scroll">
+              <section className="settings-section">
+                <h3>Minha conta</h3>
 
-.privacy-policy-text h2 {
-  margin: 0 0 4px;
-  font-size: 1.35rem;
-}
+                <label>
+                  Nome
+                  <div className="settings-inline">
+                    <input
+                      value={displayNameInput}
+                      onChange={(e) => setDisplayNameInput(e.target.value)}
+                    />
+                    <button onClick={saveDisplayName} disabled={settingsBusy}>
+                      Salvar
+                    </button>
+                  </div>
+                </label>
 
-.privacy-policy-text .privacy-version {
-  color: var(--muted);
-  margin: 0 0 18px;
-  font-size: .75rem;
-}
+                <label>
+                  E-mail
+                  <div className="settings-inline">
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                    />
+                    <button onClick={requestEmailChange} disabled={settingsBusy}>
+                      Alterar
+                    </button>
+                  </div>
+                </label>
 
-.privacy-policy-text h3 {
-  margin: 20px 0 7px;
-  font-size: .93rem;
-}
+                <button
+                  className="settings-secondary-button"
+                  onClick={resetPassword}
+                  disabled={settingsBusy}
+                >
+                  Redefinir senha
+                </button>
+              </section>
 
-.privacy-policy-text p {
-  color: var(--text);
-  opacity: .88;
-  line-height: 1.68;
-  font-size: .82rem;
-  margin: 0 0 10px;
-}
+              <section className="settings-section">
+                <h3>Privacidade e dados</h3>
+                <p>
+                  Apague todas as conversas salvas na sua conta e comece um histórico novo.
+                </p>
+                <button
+                  className="settings-danger-outline"
+                  onClick={clearConversationHistory}
+                  disabled={settingsBusy}
+                >
+                  Apagar histórico de conversas
+                </button>
+              </section>
 
-.privacy-gate-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 22px;
-  background:
-    radial-gradient(circle at top left, rgba(154,76,168,.18), transparent 34%),
-    var(--bg);
-}
+              <section className="settings-section">
+                <h3>Feedback</h3>
+                <label>
+                  Tipo
+                  <select
+                    value={feedbackType}
+                    onChange={(e) => setFeedbackType(e.target.value)}
+                  >
+                    <option>Sugestão</option>
+                    <option>Elogio</option>
+                    <option>Problema</option>
+                    <option>Outro</option>
+                  </select>
+                </label>
 
-.privacy-gate-card {
-  width: min(900px, 100%);
-  max-height: 92vh;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: 26px;
-  background: var(--panel-strong);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
+                <label>
+                  Mensagem
+                  <textarea
+                    rows={5}
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder="Conte o que você achou da Tulipa IA..."
+                  />
+                </label>
 
-.privacy-gate-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--line);
-}
+                <button
+                  className="settings-primary-button"
+                  onClick={submitFeedback}
+                  disabled={settingsBusy}
+                >
+                  Enviar feedback
+                </button>
+              </section>
 
-.privacy-gate-logo {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 14px;
-}
+              <section className="settings-section">
+                <h3>Política de Privacidade</h3>
+                <p>
+                  Consulte a política aceita pela sua conta e as informações sobre tratamento de dados.
+                </p>
+                <button
+                  className="settings-secondary-button"
+                  onClick={() => setPrivacyViewOpen(true)}
+                >
+                  Ler Política de Privacidade
+                </button>
+              </section>
 
-.privacy-gate-header h1 {
-  margin: 0;
-  font-size: 1.2rem;
-}
+              <section className="settings-section settings-danger-zone">
+                <h3>Zona de perigo</h3>
+                <p>
+                  Excluir a conta remove o acesso e apaga o histórico de conversas.
+                </p>
+                <button
+                  className="settings-danger-button"
+                  onClick={deleteMyAccount}
+                  disabled={settingsBusy}
+                >
+                  Excluir minha conta
+                </button>
+              </section>
+            </div>
+          </section>
+        </div>
+      )}
 
-.privacy-gate-header p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: .78rem;
-}
+      {privacyViewOpen && (
+        <div className="privacy-backdrop" onClick={() => setPrivacyViewOpen(false)}>
+          <section className="privacy-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="privacy-modal-header">
+              <div>
+                <strong>Política de Privacidade</strong>
+                <span>Versão {PRIVACY_POLICY_VERSION}</span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setPrivacyViewOpen(false)}
+                aria-label="Fechar política"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="privacy-modal-scroll">
+              <PrivacyPolicyContent />
+            </div>
+          </section>
+        </div>
+      )}
 
-.privacy-gate-scroll {
-  overflow: auto;
-  padding: 20px;
-}
+      {toast && (
+        <div className={`app-toast ${toast.kind}`} role="status">
+          {toast.message}
+        </div>
+      )}
 
-.privacy-gate-check {
-  margin: 0 20px 14px !important;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--brand-soft);
-}
+      <main className="chat-area">
+        <header className="topbar">
+          <button
+            className="icon-button"
+            onClick={() => setSidebarOpen((v) => !v)}
+            aria-label="Abrir ou fechar menu"
+          >
+            {sidebarOpen ? <X size={19} /> : <Menu size={19} />}
+          </button>
 
-.privacy-gate-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 9px;
-  padding: 14px 20px 18px;
-  border-top: 1px solid var(--line);
-}
+          <div className="topbar-title">
+            <strong>{active?.title || "Tulipa IA"}</strong>
+            <span>{publicConfig.assistantSubtitle}</span>
+          </div>
 
-.privacy-logout {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 11px 14px;
-  background: var(--panel);
-  cursor: pointer;
-  font-weight: 750;
-}
+          {publicConfig.showDailyCounter && (
+            <div className="usage-pill" title="Limite diário de uso">
+              🌷 {remaining}/{dailyLimit} hoje
+            </div>
+          )}
+        </header>
 
-.app-toast {
-  position: fixed;
-  z-index: 150;
-  right: 18px;
-  top: 18px;
-  width: min(390px, calc(100vw - 36px));
-  padding: 13px 15px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel-strong);
-  color: var(--text);
-  box-shadow: 0 20px 55px rgba(0,0,0,.22);
-  font-size: .8rem;
-  line-height: 1.45;
-  animation: tulipa-toast-in .2s ease-out;
-}
+        <section className="messages">
+          {chatLoading && (
+            <div className="chat-loading">🌷 Preparando seu jardim de conversas...</div>
+          )}
 
-.app-toast.success {
-  border-left: 4px solid #168553;
-}
+          {!chatLoading && active?.messages.map((message) => (
+            <article
+              key={message.id}
+              className={`message ${message.role === "user" ? "user" : "assistant"}`}
+            >
+              {message.role === "assistant" && (
+                <div className="message-avatar">
+                  <img
+                    src="/brand/tulipa-symbol.png"
+                    alt="Tulipa.ia"
+                    className="message-logo-image"
+                  />
+                </div>
+              )}
+              <div>
+                <div className="bubble">
+                  {message.attachment && (
+                    <div className="message-attachment">
+                      {message.attachment.kind === "pdf" ? <FileText size={16} /> : <ImageIcon size={16} />}
+                      <span>{message.attachment.name}</span>
+                    </div>
+                  )}
+                  {message.text && <span>{message.text}</span>}
+                </div>
+                <time>{formatTime(message.createdAt)}</time>
+              </div>
+            </article>
+          ))}
 
-.app-toast.error {
-  border-left: 4px solid #b42318;
-}
+          {sending && (
+            <article className="message assistant">
+              <div className="message-avatar">
+                <img
+                  src="/brand/tulipa-symbol.png"
+                  alt="Tulipa.ia"
+                  className="message-logo-image"
+                />
+              </div>
+              <div className="typing-bubble">
+                <span />
+                <span />
+                <span />
+              </div>
+            </article>
+          )}
+          <div ref={bottomRef} />
+        </section>
 
-.app-toast.info {
-  border-left: 4px solid var(--brand);
-}
+        <section className="composer-wrap">
+          {publicConfig.showBetaMessage && (
+            <div className="beta-banner">{publicConfig.betaMessage}</div>
+          )}
+          {attachment && (
+            <div className="attachment-preview">
+              <div className="attachment-preview-icon">
+                {attachment.kind === "pdf" ? <FileText size={19} /> : <ImageIcon size={19} />}
+              </div>
+              <div className="attachment-preview-info">
+                <strong>{attachment.name}</strong>
+                <span>{attachment.kind === "pdf" ? "PDF" : "Imagem"} · pronto para enviar</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                aria-label="Remover anexo"
+                title="Remover anexo"
+              >
+                <X size={17} />
+              </button>
+            </div>
+          )}
+          <div className="composer">
+            <input
+              ref={fileInputRef}
+              className="attachment-input"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              onChange={handleAttachment}
+            />
+            <button
+              className="attach-button"
+              onClick={chooseAttachment}
+              disabled={sending}
+              type="button"
+              aria-label="Anexar PDF ou imagem"
+              title="Anexar PDF ou imagem"
+            >
+              <Paperclip size={18} />
+            </button>
+            <textarea
+              value={input}
+              placeholder="Converse com a Tulipa IA..."
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+              rows={1}
+            />
+            <button
+              className={`mic-button ${listening ? "listening" : ""}`}
+              onClick={toggleVoiceInput}
+              disabled={sending}
+              type="button"
+              aria-label={listening ? "Parar de ouvir" : "Falar com a Tulipa"}
+              title={listening ? "Ouvindo... clique para parar" : "Mensagem por voz"}
+            >
+              <Mic size={18} />
+            </button>
+            <button
+              className="send-button"
+              onClick={send}
+              disabled={sending || remaining <= 0 || (!input.trim() && !attachment)}
+              title={remaining <= 0 ? "Limite diário atingido" : "Enviar"}
+            >
+              <Send size={18} />
+            </button>
+          </div>
+          <p className="privacy-hint">
+            As conversas ficam vinculadas à sua conta para permitir histórico e continuidade.
+          </p>
+        </section>
+      </main>
 
-@keyframes tulipa-toast-in {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.admin-user-presence {
-  min-width: 150px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 6px;
-  align-items: center;
-}
-
-.admin-user-presence strong {
-  font-size: .7rem;
-}
-
-.admin-user-presence small {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  margin-top: 3px;
-  font-size: .64rem;
-}
-
-.presence-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #aaa;
-  box-shadow: 0 0 0 3px rgba(120,120,120,.1);
-}
-
-.presence-dot.online {
-  background: #18a66a;
-  box-shadow: 0 0 0 3px rgba(24,166,106,.13);
-}
-
-@media (max-width: 760px) {
-  .privacy-backdrop {
-    padding: 0;
-    align-items: end;
-  }
-
-  .privacy-modal {
-    max-height: 94dvh;
-    border-radius: 22px 22px 0 0;
-  }
-
-  .privacy-modal-scroll {
-    max-height: calc(94dvh - 68px);
-  }
-
-  .privacy-gate-shell {
-    padding: 0;
-  }
-
-  .privacy-gate-card {
-    min-height: 100dvh;
-    max-height: 100dvh;
-    border-radius: 0;
-  }
-
-  .privacy-gate-actions {
-    flex-direction: column-reverse;
-  }
-
-  .privacy-gate-actions button {
-    width: 100%;
-  }
-
-  .app-toast {
-    top: 12px;
-    right: 12px;
-    width: calc(100vw - 24px);
-  }
-
-  .admin-user-presence {
-    min-width: 118px;
-  }
+      <Analytics />
+    </div>
+  );
 }
