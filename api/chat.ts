@@ -101,6 +101,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const history = Array.isArray(req.body?.history) ? req.body.history : [];
     const attachment = req.body?.attachment;
+    const requestedStyle = typeof req.body?.responseStyle === "string" ? req.body.responseStyle : "didatica";
+    const styleInstructions: Record<string, string> = {
+      objetiva: "Seja objetiva: responda de forma curta, direta e sem explicações desnecessárias. Priorize a resposta principal.",
+      didatica: "Seja didática: explique com clareza, organize o raciocínio e use exemplos quando ajudarem a compreensão.",
+      criativa: "Seja criativa: explore boas possibilidades, exemplos e ideias originais, sem perder precisão.",
+      formal: "Use linguagem formal, profissional, clara e bem organizada. Evite gírias e informalidade excessiva.",
+      casual: "Use um tom casual, leve e natural, mantendo clareza e respeito. Pode soar mais conversacional.",
+      detalhada: "Seja detalhada: desenvolva bem a resposta, apresente contexto, etapas e informações relevantes, sem repetição desnecessária.",
+    };
+    const responseStyle = requestedStyle in styleInstructions ? requestedStyle : "didatica";
+    const responseStyleInstruction = styleInstructions[responseStyle];
 
     let attachmentPart: any = null;
     let attachmentName = "";
@@ -258,6 +269,9 @@ Estilo:
 - não use comandos como \\text{} ou símbolos $;
 - escreva fórmulas diretamente quando necessário;
 - mantenha o contexto da conversa atual.
+
+Preferência de estilo escolhida pelo usuário:
+${responseStyleInstruction}
 `,
               },
             ],
