@@ -424,11 +424,20 @@ function LoginScreen({
         await setDoc(
           doc(db, "users", credential.user.uid),
           {
+            uid: credential.user.uid,
+            email: credential.user.email || email,
+            displayName: credential.user.displayName || "",
             privacyAccepted: true,
             privacyAcceptedAt: serverTimestamp(),
             privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+            lastSeenAt: serverTimestamp(),
+            lastActiveAt: serverTimestamp(),
           },
           { merge: true }
+        );
+        localStorage.setItem(
+          `tulipa-privacy-${credential.user.uid}`,
+          PRIVACY_POLICY_VERSION
         );
       } else {
         await signInWithEmailAndPassword(auth, email, password);
@@ -712,11 +721,21 @@ export default function App() {
         const snap = await getDoc(userRef);
         const data = snap.exists() ? snap.data() : {};
 
+        const acceptedVersion =
+          typeof data?.privacyPolicyVersion === "string"
+            ? data.privacyPolicyVersion
+            : "";
+
         const accepted =
           data?.privacyAccepted === true &&
-          data?.privacyPolicyVersion === PRIVACY_POLICY_VERSION;
+          acceptedVersion === PRIVACY_POLICY_VERSION;
 
-        setPrivacyAccepted(accepted);
+        const localAcceptedVersion =
+          localStorage.getItem(`tulipa-privacy-${currentUser.uid}`) || "";
+
+        setPrivacyAccepted(
+          accepted || localAcceptedVersion === PRIVACY_POLICY_VERSION
+        );
 
         await setDoc(
           userRef,
@@ -1022,6 +1041,10 @@ export default function App() {
           lastActiveAt: serverTimestamp(),
         },
         { merge: true }
+      );
+      localStorage.setItem(
+        `tulipa-privacy-${user.uid}`,
+        PRIVACY_POLICY_VERSION
       );
       setPrivacyAccepted(true);
       showToast("Política de Privacidade aceita.", "success");
