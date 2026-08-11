@@ -83,11 +83,12 @@ async function buildDashboard() {
   const auth = getAuth(app);
   const db = getFirestore(app);
 
-  const [config, authUsers, todayUsage, feedbackSnap] = await Promise.all([
+  const [config, authUsers, todayUsage, feedbackSnap, profileSnap] = await Promise.all([
     readConfig(db),
     auth.listUsers(100),
     db.collection("tulipa_usage").where("date", "==", todayKey()).get(),
     db.collection("feedback").orderBy("createdAt", "desc").limit(100).get(),
+    db.collection("users").limit(500).get(),
   ]);
 
   let conversations = 0;
@@ -103,6 +104,11 @@ async function buildDashboard() {
     0
   );
 
+  const profiles = new Map(
+    profileSnap.docs.map((item) => [item.id, item.data() || {}])
+  );
+  const now = Date.now();
+
   return {
     config,
     stats: {
@@ -110,12 +116,28 @@ async function buildDashboard() {
       conversations,
       messagesToday,
     },
-    users: authUsers.users.map((item) => ({
-      uid: item.uid,
-      email: item.email || "",
-      displayName: item.displayName || "",
-      disabled: item.disabled,
-    })),
+    users: authUsers.users.map((item) => {
+      const profile: any = profiles.get(item.uid) || {};
+      const lastSeenDate = profile.lastSeenAt?.toDate
+        ? profile.lastSeenAt.toDate()
+        : null;
+      const lastActiveDate = profile.lastActiveAt?.toDate
+        ? profile.lastActiveAt.toDate()
+        : lastSeenDate;
+      const lastActiveMs = lastActiveDate ? lastActiveDate.getTime() : 0;
+
+      return {
+        uid: item.uid,
+        email: item.email || "",
+        displayName: item.displayName || "",
+        disabled: item.disabled,
+        lastSeenAt: lastSeenDate ? lastSeenDate.toISOString() : "",
+        lastActiveAt: lastActiveDate ? lastActiveDate.toISOString() : "",
+        online: Boolean(lastActiveMs && now - lastActiveMs <= 120000),
+        privacyAccepted: profile.privacyAccepted === true,
+        privacyPolicyVersion: String(profile.privacyPolicyVersion || ""),
+      };
+    }),
     feedbacks: feedbackSnap.docs.map((item) => {
       const data = item.data() || {};
       const createdAt = data.createdAt?.toDate
